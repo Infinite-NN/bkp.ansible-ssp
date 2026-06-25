@@ -59,55 +59,12 @@
     - build_prep
 
 
-- name: "[BUILD] Discover kernel version"
-  block:
-    - name: "Find latest kernel version for this branch"
-      shell: |
-        set -euo pipefail
-        
-        # Find latest kernel in /usr/src/kernels
-        KERNEL=$(ls -1d /usr/src/kernels/4.18.0-* 2>/dev/null | sort -V | tail -1)
-        
-        if [ -z "$KERNEL" ]; then
-          echo "❌ No kernel found in /usr/src/kernels"
-          exit 1
-        fi
-        
-        basename "$KERNEL"
-      args:
-        executable: /bin/bash
-      register: kernel_version_result
-      changed_when: false
-
-    - name: "Set kernel path"
-      set_fact:
-        build_pcf_kernel_path: "/usr/src/kernels/{{ kernel_version_result.stdout }}"
-
-    - name: "Verify kernel path exists"
-      stat:
-        path: "{{ build_pcf_kernel_path }}"
-      register: kernel_stat
-
-    - name: "Fail if kernel not found"
-      fail:
-        msg: "❌ Kernel not found at: {{ build_pcf_kernel_path }}"
-      when: not kernel_stat.stat.exists
-
-    - name: "Log kernel version"
-      debug:
-        msg: "✅ Using kernel: {{ build_pcf_kernel_path }}"
-
-  tags:
-    - build
-    - build_kernel
-
-
 - name: "[BUILD] Compile PCF modules via chroot"
   block:
     - name: "Log build start"
       lineinfile:
         path: "{{ build_pcf_log }}"
-        line: "[BUILD][START] {{ ansible_date_time.iso8601 }} — Building {{ build_pcf_branch }} with kernel {{ build_pcf_kernel_path | basename }}"
+        line: "[BUILD][START] {{ ansible_date_time.iso8601 }} — Building {{ build_pcf_branch }} with kernel {{ chroot_kernel_path | basename }}"
         insertafter: EOF
 
     - name: "Capture build start timestamp"
@@ -135,6 +92,16 @@
         msg: "❌ Build script not found at {{ build_pcf_build_dir }}/icu/buildtools/bambooBuildRpms"
       when: not bamboo_script_stat.stat.exists
 
+    - name: "Verify kernel in chroot"
+      stat:
+        path: "/sandbox/rhel810{{ chroot_kernel_path }}"
+      register: chroot_kernel_verify
+
+    - name: "Fail if kernel not found in chroot"
+      fail:
+        msg: "❌ Kernel path not found in chroot: /sandbox/rhel810{{ chroot_kernel_path }}"
+      when: not chroot_kernel_verify.stat.exists
+
     - name: "Run PCF build via chroot + bambooBuildRpms"
       shell: |
         set -euo pipefail
@@ -144,7 +111,7 @@
         echo "Build Number    : {{ build_pcf_build_no }}"
         echo "Module Version  : {{ build_pcf_module_ver }}"
         echo "Version         : {{ build_pcf_version }}"
-        echo "Kernel          : {{ build_pcf_kernel_path }}"
+        echo "Kernel (chroot) : {{ chroot_kernel_path }}"
         echo "Build Dir       : {{ build_pcf_build_dir }}"
         echo "Chroot          : /sandbox/rhel810"
         echo "Start Time      : {{ ansible_date_time.iso8601 }}"
@@ -156,7 +123,7 @@
           -d "{{ build_pcf_build_dir }}" \
           -P pcf \
           -v "{{ build_pcf_version }}" \
-          -K "{{ build_pcf_kernel_path }}" \
+          -K "{{ chroot_kernel_path }}" \
           -t "https://scm.forge.avaya.com/svnroot/aurora/branches/{{ build_pcf_branch }}" \
           -m "{{ build_pcf_module_ver }}" \
           2>&1
@@ -189,7 +156,16 @@
       shell: |
         echo "=== BUILD FAILURE DEBUG INFO ==="
         echo "Build directory: {{ build_pcf_build_dir }}"
-        echo "Kernel: {{ build_pcf_kernel_path | default('NOT_SET') }}"
+        echo "Kernel (chroot): {{ chroot_kernel_path | default('NOT_SET') }}"
+        echo ""
+        echo "=== Chroot kernel verification ==="
+        CHROOT_KERNEL="/sandbox/rhel810{{ chroot_kernel_path | default('') }}"
+        if [ -d "$CHROOT_KERNEL" ]; then
+          echo "✅ Kernel found at: $CHROOT_KERNEL"
+          ls -la "$CHROOT_KERNEL" | head -10
+        else
+          echo "❌ Kernel NOT found at: $CHROOT_KERNEL"
+        fi
         echo ""
         echo "=== Last 50 lines of build directory ==="
         ls -ltra "{{ build_pcf_build_dir }}" 2>/dev/null | tail -50 || echo "Cannot list directory"
@@ -221,7 +197,7 @@
         msg: |
           ❌ PCF build failed for {{ build_pcf_branch }}
           Build Dir: {{ build_pcf_build_dir }}
-          Kernel: {{ build_pcf_kernel_path | default('NOT_SET') }}
+          Kernel (chroot): {{ chroot_kernel_path | default('NOT_SET') }}
           See {{ build_pcf_log }} for details
 
   tags:
@@ -360,7 +336,7 @@
           Build Branch    : {{ build_pcf_branch }}
           Build Number    : {{ build_pcf_build_no }}
           Module Version  : {{ build_pcf_module_ver }}
-          Kernel Version  : {{ build_pcf_kernel_path | basename }}
+          Kernel Version  : {{ chroot_kernel_path | basename }}
           
           RPM Details:
           Path            : {{ build_pcf_rpm_path.path }}
@@ -395,7 +371,7 @@
           [BUILD][SUCCESS] RPM generated and copied
           File: {{ build_pcf_releases_dir }}/{{ build_pcf_rpm_path.path | basename }}
           Checksum: {{ rpm_checksum.stdout }}
-          Kernel: {{ build_pcf_kernel_path | basename }}
+          Kernel: {{ chroot_kernel_path | basename }}
           Timestamp: {{ ansible_date_time.iso8601 }}
         insertafter: EOF
 
@@ -409,7 +385,7 @@
           Branch      : {{ build_pcf_branch }}
           Build #     : {{ build_pcf_build_no }}
           Module Ver  : {{ build_pcf_module_ver }}
-          Kernel      : {{ build_pcf_kernel_path | basename }}
+          Kernel      : {{ chroot_kernel_path | basename }}
           
           RPM Output:
           Location    : {{ build_pcf_releases_dir }}/{{ build_pcf_rpm_path.path | basename }}
