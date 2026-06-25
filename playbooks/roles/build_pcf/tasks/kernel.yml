@@ -43,25 +43,23 @@
     - name: "Download kernel-devel RPM"
       shell: |
         set -euo pipefail
-
+    
         cd "{{ kernel_work_dir }}"
-        
+    
         echo "⬇️  Downloading latest kernel-devel RPM..."
-        
-        # Use dnf to download without installing
+    
         if ! dnf download kernel-devel --destdir="{{ kernel_work_dir }}" -q 2>/dev/null; then
           echo "❌ dnf download failed, trying alternative method..."
           exit 1
         fi
-
-        # Find the downloaded RPM
+    
         RPM=$(ls -1 "{{ kernel_work_dir }}"/kernel-devel-*.rpm 2>/dev/null | sort -V | tail -1)
-        
+    
         if [ -z "$RPM" ]; then
           echo "❌ No kernel-devel RPM found after download"
           exit 1
         fi
-
+    
         echo "✅ Downloaded: $(basename "$RPM")"
         basename "$RPM"
       args:
