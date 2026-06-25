@@ -15,7 +15,7 @@
 # ─────────────────────────────────────────────────────────
 
 - name: cleanup build directory on success
-  listen: "cleanup build directory"
+  notify: "cleanup build directory"
   block:
     - name: "Remove build working directory"
       file:
@@ -42,7 +42,7 @@
 
 
 - name: cleanup kernel work directory
-  listen: "cleanup kernel work dir"
+  notify: "cleanup kernel work dir"
   block:
     - name: "Remove kernel work directory"
       file:
@@ -69,7 +69,7 @@
 
 
 - name: remove staged kernel rpm from sandbox
-  listen: "remove staged kernel rpm"
+  notify: "remove staged kernel rpm"
   block:
     - name: "Locate staged kernel RPM in sandbox"
       find:
@@ -105,7 +105,7 @@
 
 
 - name: remove stale pcf rpms from agent home
-  listen: "remove stale pcf rpms"
+  notify: "remove stale pcf rpms"
   block:
     - name: "Search for old PCF RPMs"
       find:
@@ -142,7 +142,7 @@
 
 
 - name: restore repository permissions
-  listen: "restore repo permissions"
+  notify: "restore repo permissions"
   block:
     - name: "Verify repository exists"
       stat:
@@ -182,7 +182,7 @@
 # ─────────────────────────────────────────────────────────
 
 - name: log build failure
-  listen: "log build failure"
+  notify: "log build failure"
   block:
     - name: "Write failure header to log"
       lineinfile:
@@ -212,7 +212,7 @@
 
 
 - name: append build summary to log
-  listen: "append build summary"
+  notify: "append build summary"
   block:
     - name: "Generate build summary"
       copy:
@@ -265,7 +265,7 @@
 # ─────────────────────────────────────────────────────────
 
 - name: notify build completion
-  listen: "notify build completion"
+  notify: "notify build completion"
   block:
     - name: "Log notification trigger"
       lineinfile:
