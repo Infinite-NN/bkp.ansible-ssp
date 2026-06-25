@@ -15,17 +15,11 @@
 // ✅ Teams notifications (working)
 // =============================================================
 
-@Library('avaya-shared-lib@main') _
+// @Library('avaya-shared-lib@main') _
 
 pipeline {
 
-    agent { 
-        label 'avaya-build-node'
-        options {
-            skipDefaultCheckout()
-            disableConcurrentBuilds()
-        }
-    }
+    agent any
 
     options {
         timestamps()
@@ -103,7 +97,6 @@ pipeline {
         ANSIBLE_BKP_SRC   = "/var/lib/jenkins/bkp.ansible-ssp"
 
         // Jenkins Credentials (from Jenkins Credential Store)
-        SSH_CRED_ID       = 'avaya-sbc-ssh-key'
         SUDO_CRED_ID      = 'avaya-build-sudo'
         SCM_CRED_ID       = 'avaya-scm-token'
         TEAMS_WEBHOOK_ID  = 'avaya-teams-webhook'
@@ -487,13 +480,7 @@ def prepareWorkspace() {
 }
 
 def healthCheckConnectivity() {
-    withCredentials([
-        sshUserPrivateKey(
-            credentialsId:   env.SSH_CRED_ID,
-            keyFileVariable: 'SSH_KEY',
-            usernameVariable: 'SSH_USER'
-        )
-    ]) {
+        {
         sh '''
         set -euo pipefail
 
@@ -607,16 +594,7 @@ def buildPcfModules() {
         parallelJobs["Build: ${branch}"] = {
             stage("Build: ${branch}") {
                 retry(2) {
-                    withCredentials([
-                        string(
-                            credentialsId: env.SCM_CRED_ID,
-                            variable: 'SCM_TOKEN'
-                        ),
-                        sshUserPrivateKey(
-                            credentialsId:   env.SSH_CRED_ID,
-                            keyFileVariable: 'SSH_KEY'
-                        )
-                    ]) {
+                     {
                         sh '''
                         set -euo pipefail
 
@@ -665,12 +643,7 @@ def buildPcfModules() {
 }
 
 def runSecurityUpdates() {
-    withCredentials([
-        sshUserPrivateKey(
-            credentialsId:   env.SSH_CRED_ID,
-            keyFileVariable: 'SSH_KEY'
-        )
-    ]) {
+ {
         retry(1) {
             sh '''
             set -euo pipefail
@@ -698,12 +671,7 @@ def runSecurityUpdates() {
 }
 
 def runSspPipeline() {
-    withCredentials([
-        sshUserPrivateKey(
-            credentialsId:   env.SSH_CRED_ID,
-            keyFileVariable: 'SSH_KEY'
-        )
-    ]) {
+ {
         retry(1) {
             sh '''
             set -euo pipefail
@@ -736,12 +704,7 @@ def runSspPipeline() {
 }
 
 def runPostRebootValidation() {
-    withCredentials([
-        sshUserPrivateKey(
-            credentialsId:   env.SSH_CRED_ID,
-            keyFileVariable: 'SSH_KEY'
-        )
-    ]) {
+ {
         sh '''
         set -euo pipefail
 
@@ -900,6 +863,7 @@ SUMMARY_EOF
 }
 
 def notifyTeams(String status, String duration) {
+    /*
     withCredentials([string(credentialsId: env.TEAMS_WEBHOOK_ID, variable: 'TEAMS_WEBHOOK')]) {
         sh '''
         set -euo pipefail
@@ -990,6 +954,7 @@ EOF
         '''
     }
 }
+*/
 
 def calculateDuration() {
     return sh(
