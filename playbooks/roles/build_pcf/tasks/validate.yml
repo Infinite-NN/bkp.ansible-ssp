@@ -78,7 +78,7 @@
 
     - name: "Set derived directory paths"
       set_fact:
-        build_pcf_svn_repo: "{{ lookup('env', 'SVN_REPOS_LOCAL') | default('/var/lib/jenkins/SVN_repos') }}/{{ build_pcf_branch }}"
+        build_pcf_svn_repo: "{{ lookup('env', 'SVN_REPOS_LOCAL', wantlist=False) or '/var/lib/jenkins/SVN_repos' }}/{{ build_pcf_branch }}"
         build_pcf_build_dir: "{{ build_pcf_build_root }}/{{ build_pcf_branch }}"
         build_pcf_release_dir: "{{ build_pcf_releases_dir }}/{{ build_pcf_branch }}"
 
