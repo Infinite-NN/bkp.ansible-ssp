@@ -36,14 +36,20 @@
               - pcf_branch is regex('^10\.2\.1\.[0-9]+_orion_int$')
             fail_msg: "❌ Invalid PCF branch: {{ pcf_branch }}"
             success_msg: "✅ Branch validation passed: {{ pcf_branch }}"
-
+          tags:
+            - validate
+            - always
+            
         - name: "Validate build number"
           assert:
             that:
               - pcf_build_no is defined
-              - pcf_build_no | string | regex('^[0-9]+$')
+              - pcf_build_no | string | regex_search('^[0-9]+$')
             fail_msg: "❌ Build number must be numeric: {{ pcf_build_no }}"
             success_msg: "✅ Build number validation passed: {{ pcf_build_no }}"
+          tags:
+            - validate
+            - always
 
         - name: "Validate module version format"
           assert:
