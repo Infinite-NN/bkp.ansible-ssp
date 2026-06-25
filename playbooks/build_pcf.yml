@@ -39,7 +39,7 @@
           tags:
             - validate
             - always
-            
+
         - name: "Validate build number"
           assert:
             that:
@@ -55,7 +55,7 @@
           assert:
             that:
               - pcf_module_ver is defined
-              - pcf_module_ver | regex('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+              - pcf_module_ver | regex_search('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
             fail_msg: "❌ Invalid module version format: {{ pcf_module_ver }} (expected x.x.x.xxxxxx)"
             success_msg: "✅ Module version validation passed: {{ pcf_module_ver }}"
 
