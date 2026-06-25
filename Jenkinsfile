@@ -653,7 +653,6 @@ def runSspPipeline() {
 
         ansible-playbook \\
             -i ${ANSIBLE_INVENTORY}/hosts.ini \\
-            --private-key ${SSH_KEY} \\
             -e "environment=${ENVIRONMENT}" \\
             -e "build_number=${BUILD_NUMBER}" \\
             -e "module_version=${MODULE_VER}" \\
