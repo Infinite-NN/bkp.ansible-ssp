@@ -1,0 +1,207 @@
+---
+# =============================================================
+# Build PCF Role — Variable Definitions
+# Purpose: Define variables required for this role.
+#
+# These variables:
+#   - Override defaults/main.yml
+#   - Can be overridden by group_vars/host_vars
+#   - Can be overridden by -e extra-vars at CLI
+#
+# Variables passed via Jenkins pipeline:
+#   - build_pcf_branch (from BUILD parameter)
+#   - build_pcf_build_no (from BUILD_NO parameter)
+#   - build_pcf_module_ver (from MODULE_VER parameter)
+# =============================================================
+
+# ─────────────────────────────────────────────────────────
+# REQUIRED BUILD VARIABLES (must be passed via -e)
+# ─────────────────────────────────────────────────────────
+# These must be provided at runtime or role will fail early
+
+build_pcf_branch: "{{ build_pcf_branch | default('UNDEFINED') }}"
+build_pcf_build_no: "{{ build_pcf_build_no | default('UNDEFINED') }}"
+build_pcf_module_ver: "{{ build_pcf_module_ver | default('UNDEFINED') }}"
+
+# Optional environment override
+build_pcf_environment: "{{ build_pcf_environment | default('production') }}"
+
+# ─────────────────────────────────────────────────────────
+# DERIVED VARIABLES (computed from inputs)
+# ─────────────────────────────────────────────────────────
+# These are derived from required variables and should NOT be
+# overridden unless you know what you're doing
+
+# Extract version from branch (e.g., 10.2.1.0_orion_int → 10.2.1.0)
+build_pcf_version: "{{ build_pcf_branch | regex_replace('_orion_int$', '') | default('UNKNOWN') }}"
+
+# ─────────────────────────────────────────────────────────
+# VALIDATION PATTERNS (Regex)
+# ─────────────────────────────────────────────────────────
+# Used in assert statements to validate input formats
+
+# Branch pattern: must match 10.2.1.X_orion_int
+branch_pattern: '^10\.2\.1\.[0-9]+_orion_int$'
+
+# Version pattern: must match 10.2.1.X (extracted from branch)
+version_pattern: '^10\.2\.1\.[0-9]+$'
+
+# Module version pattern: must be X.X.X.X format
+module_ver_pattern: '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
+
+# Build number pattern: must be numeric only
+build_no_pattern: '^[0-9]+$'
+
+# RPM filename pattern for PCF modules
+rpm_name_pattern: '^pcf-module-.*\.rpm$'
+
+# ─────────────────────────────────────────────────────────
+# TIMEOUT CONFIGURATION (seconds)
+# ─────────────────────────────────────────────────────────
+# Overrides defaults for this specific role instance
+
+# PCF build script execution timeout
+build_script_timeout: 10800
+
+# Kernel RPM download timeout
+kernel_download_timeout: 300
+
+# Kernel installation inside chroot timeout
+kernel_install_timeout: 300
+
+# RPM query (rpm -qp) timeout
+rpm_query_timeout: 60
+
+# Overall chroot build execution timeout
+chroot_timeout: 10800
+
+# ─────────────────────────────────────────────────────────
+# RETRY CONFIGURATION
+# ─────────────────────────────────────────────────────────
+
+# Retry count for flaky network operations
+network_operation_retries: 5
+
+# Retry count for chroot operations
+chroot_operation_retries: 2
+
+# Delay between retries (seconds)
+operation_retry_delay: 30
+
+# ─────────────────────────────────────────────────────────
+# FILE SIZE THRESHOLDS (bytes)
+# ─────────────────────────────────────────────────────────
+# Used to validate downloaded/built artifacts
+
+# Minimum expected kernel RPM size (1 MB)
+kernel_rpm_min_size: 1048576
+
+# Minimum expected PCF RPM size (2 MB)
+pcf_rpm_min_size: 2097152
+
+# Maximum expected PCF RPM size (100 MB)
+pcf_rpm_max_size: 104857600
+
+# ─────────────────────────────────────────────────────────
+# DISK SPACE REQUIREMENTS (GB)
+# ─────────────────────────────────────────────────────────
+
+# Minimum free disk space on build filesystem
+min_build_disk_free_gb: 5
+
+# ─────────────────────────────────────────────────────────
+# KERNEL CONFIGURATION
+# ─────────────────────────────────────────────────────────
+
+# Minimum kernel version to accept (semantic version)
+kernel_min_version: "4.18"
+
+# Standard path prefix where kernel sources live in chroot
+kernel_source_path_prefix: "/usr/src/kernels"
+
+# ─────────────────────────────────────────────────────────
+# BUILD ARTIFACT CONFIGURATION
+# ─────────────────────────────────────────────────────────
+
+# Maximum recursion depth when searching for built RPMs
+rpm_search_max_depth: 5
+
+# Include test RPMs in search
+include_test_rpms: false
+
+# ─────────────────────────────────────────────────────────
+# LOGGING AND DEBUG CONFIGURATION
+# ─────────────────────────────────────────────────────────
+
+# Log file will be formatted at runtime with:
+# - branch name
+# - build number
+# - date
+log_file_template: "/var/log/avaya_pipeline/build_pcf_{branch}_{build_no}_{date}.log"
+
+# Number of previous logs to retain before rotation
+log_retention_count: 30
+
+# Enable verbose logging of shell commands
+verbose_logging: false
+
+# Enable ansible debug output
+debug_mode: false
+
+# ─────────────────────────────────────────────────────────
+# FEATURE FLAGS
+# ─────────────────────────────────────────────────────────
+
+# Validate kernel RPM signature before installation
+validate_kernel_signature: false
+
+# Generate checksum manifest for built RPMs
+generate_checksum_manifest: true
+
+# Perform RPM database integrity check after build
+check_rpm_database: true
+
+# Clean up old build artifacts before starting new build
+cleanup_old_artifacts: true
+
+# Keep build directory for post-mortem analysis on failure
+keep_build_dir_on_failure: true
+
+# ─────────────────────────────────────────────────────────
+# EXTERNAL INTEGRATIONS
+# ─────────────────────────────────────────────────────────
+
+# Release server HTTP base URL for artifact publishing
+release_http_base: "http://10.133.43.170/releases"
+
+# Timeout for HTTP requests to release server
+release_http_timeout: 30
+
+# Verify artifact is accessible via HTTP after publish
+verify_published_artifact: true
+
+# ─────────────────────────────────────────────────────────
+# BUILD METADATA (For logging and tracking)
+# ─────────────────────────────────────────────────────────
+
+# Build initiator (set from Jenkins env if available)
+build_initiator: "{{ lookup('env', 'BUILD_USER') | default('automated') }}"
+
+# CI/CD system identifier
+ci_system: "Jenkins"
+
+# Pipeline name/identifier
+pipeline_name: "avaya-sbce-ssp-pcf"
+
+# ─────────────────────────────────────────────────────────
+# ANSIBLE TASK BEHAVIOR CONFIGURATION
+# ─────────────────────────────────────────────────────────
+
+# Fail immediately on first error (vs. fail percentage)
+fail_fast: true
+
+# Max consecutive retries before giving up
+max_consecutive_retries: 3
+
+# Abort entire play if this role fails
+abort_on_role_failure: true

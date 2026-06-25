@@ -1,0 +1,317 @@
+---
+# =============================================================
+# Build PCF — Kernel Source Preparation
+# Downloads and installs kernel-devel for build environment
+# =============================================================
+
+- name: "[KERNEL] Preparation block"
+  block:
+    - name: "Ensure kernel work directory exists"
+      file:
+        path: "{{ pcf.build_temp_root }}/kernel"
+        state: directory
+        mode: '0755'
+
+    - name: "Set kernel work directory fact"
+      set_fact:
+        kernel_work_dir: "{{ pcf.build_temp_root }}/kernel"
+
+    - name: "Clean old kernel RPMs"
+      find:
+        paths: "{{ kernel_work_dir }}"
+        patterns: "kernel-devel-*.rpm"
+        file_type: file
+      register: old_kernels
+
+    - name: "Remove old kernel RPMs"
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ old_kernels.files }}"
+      when: old_kernels.matched > 0
+
+  rescue:
+    - fail:
+        msg: "Kernel directory preparation failed"
+
+  tags:
+    - kernel
+    - kernel_prep
+
+- name: "[KERNEL] Download latest kernel-devel"
+  block:
+    - name: "Download kernel-devel RPM"
+      shell: |
+        set -euo pipefail
+
+        cd "{{ kernel_work_dir }}"
+        
+        echo "⬇️  Downloading latest kernel-devel RPM..."
+        
+        # Use dnf to download without installing
+        if ! dnf download kernel-devel --destdir="{{ kernel_work_dir }}" -q 2>/dev/null; then
+          echo "❌ dnf download failed, trying alternative method..."
+          exit 1
+        fi
+
+        # Find the downloaded RPM
+        RPM=$(ls -1 "{{ kernel_work_dir }}"/kernel-devel-*.rpm 2>/dev/null | sort -V | tail -1)
+        
+        if [ -z "$RPM" ]; then
+          echo "❌ No kernel-devel RPM found after download"
+          exit 1
+        fi
+
+        echo "✅ Downloaded: $(basename "$RPM")"
+        basename "$RPM"
+      args:
+        executable: /bin/bash
+      register: kernel_rpm_download
+      timeout: 300
+      retries: "{{ pcf.build_retries }}"
+      delay: 30
+      until: kernel_rpm_download.rc == 0
+
+    - name: "Extract kernel RPM filename"
+      set_fact:
+        kernel_rpm_file: "{{ kernel_rpm_download.stdout | trim }}"
+
+    - name: "Verify kernel RPM file exists"
+      stat:
+        path: "{{ kernel_work_dir }}/{{ kernel_rpm_file }}"
+      register: kernel_rpm_stat
+
+    - name: "Fail if kernel RPM not found"
+      fail:
+        msg: |
+          ❌ Kernel RPM file not found after download
+          Expected: {{ kernel_work_dir }}/{{ kernel_rpm_file }}
+      when: not kernel_rpm_stat.exists
+
+    - name: "Display kernel RPM details"
+      debug:
+        msg: |
+          ✅ Kernel RPM downloaded:
+          File: {{ kernel_rpm_file }}
+          Size: {{ kernel_rpm_stat.stat.size }} bytes
+          Path: {{ kernel_work_dir }}/{{ kernel_rpm_file }}
+
+  rescue:
+    - name: "Log kernel download failure"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[KERNEL][DOWNLOAD_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }}"
+        insertafter: EOF
+      ignore_errors: yes
+
+    - fail:
+        msg: "Kernel RPM download failed — cannot proceed with build"
+
+  tags:
+    - kernel
+    - kernel_download
+
+- name: "[KERNEL] Validate RPM and extract metadata"
+  block:
+    - name: "Validate RPM file format"
+      shell: |
+        set -euo pipefail
+        
+        RPM_FILE="{{ kernel_work_dir }}/{{ kernel_rpm_file }}"
+        
+        # Check magic bytes (ED AB EE DB)
+        MAGIC=$(xxd -p -l 4 "$RPM_FILE" 2>/dev/null || echo "")
+        
+        if [ -z "$MAGIC" ] || ([ "$MAGIC" != "edabeedd" ] && [ "$MAGIC" != "edabeedb" ]); then
+          echo "❌ Invalid RPM file (magic bytes)"
+          exit 1
+        fi
+        
+        echo "✅ RPM file format valid"
+      args:
+        executable: /bin/bash
+      register: rpm_format_check
+
+    - name: "Query kernel RPM metadata"
+      shell: |
+        rpm -qp --queryformat "NAME=%{NAME}\nVERSION=%{VERSION}\nRELEASE=%{RELEASE}\n" \
+          "{{ kernel_work_dir }}/{{ kernel_rpm_file }}"
+      register: kernel_rpm_metadata
+      changed_when: false
+
+    - name: "Extract kernel metadata"
+      set_fact:
+        kernel_name: "{{ (kernel_rpm_metadata.stdout_lines | select('match', '^NAME=') | first | split('='))[1] }}"
+        kernel_version: "{{ (kernel_rpm_metadata.stdout_lines | select('match', '^VERSION=') | first | split('='))[1] }}"
+        kernel_release: "{{ (kernel_rpm_metadata.stdout_lines | select('match', '^RELEASE=') | first | split('='))[1] }}"
+
+    - name: "Display kernel version"
+      debug:
+        msg: |
+          📦 Kernel Package:
+          ├─ Name    : {{ kernel_name }}
+          ├─ Version : {{ kernel_version }}
+          └─ Release : {{ kernel_release }}
+
+  rescue:
+    - fail:
+        msg: "Kernel RPM validation failed"
+
+  tags:
+    - kernel
+    - kernel_validate
+
+- name: "[KERNEL] Install kernel-devel package"
+  block:
+    - name: "Check if kernel-devel is already installed at target version"
+      shell: |
+        set -euo pipefail
+        
+        # Query installed kernel-devel version
+        INSTALLED=$(rpm -q kernel-devel --queryformat '%{VERSION}-%{RELEASE}' 2>/dev/null || echo "NOT_INSTALLED")
+        
+        NEW_VER="{{ kernel_version }}-{{ kernel_release }}"
+        
+        if [ "$INSTALLED" = "$NEW_VER" ]; then
+          echo "ALREADY_INSTALLED"
+        else
+          echo "NEED_INSTALL"
+        fi
+      args:
+        executable: /bin/bash
+      register: kernel_install_check
+      changed_when: false
+
+    - name: "Install kernel-devel RPM (if needed)"
+      shell: |
+        set -euo pipefail
+        
+        RPM_FILE="{{ kernel_work_dir }}/{{ kernel_rpm_file }}"
+        
+        echo "Installing kernel-devel from: $RPM_FILE"
+        
+        # Use rpm with --force to replace if necessary
+        if ! rpm -Uvh --force "$RPM_FILE" 2>&1 | grep -qE "(already|Preparing|Unpacking|Verifying)"; then
+          echo "⚠️  Installation output was unexpected, verifying..."
+        fi
+        
+        # Verify installation
+        INSTALLED=$(rpm -q kernel-devel --queryformat '%{VERSION}-%{RELEASE}' 2>/dev/null || echo "FAILED")
+        
+        if [ "$INSTALLED" = "FAILED" ]; then
+          echo "❌ Kernel-devel installation verification failed"
+          exit 1
+        fi
+        
+        echo "✅ Kernel-devel installed: $INSTALLED"
+      args:
+        executable: /bin/bash
+      when: kernel_install_check.stdout | trim == "NEED_INSTALL"
+      register: kernel_install_result
+
+    - name: "Log kernel installation"
+      debug:
+        msg: "{{ kernel_install_result.stdout | default('Kernel-devel already installed at target version') }}"
+
+  rescue:
+    - name: "Log kernel installation failure"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[KERNEL][INSTALL_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }}"
+        insertafter: EOF
+      ignore_errors: yes
+
+    - fail:
+        msg: "Kernel-devel installation failed"
+
+  tags:
+    - kernel
+    - kernel_install
+
+- name: "[KERNEL] Locate kernel source path"
+  block:
+    - name: "Find kernel source directory"
+      shell: |
+        set -euo pipefail
+        
+        # Standard location for kernel headers after installation
+        KERNELS=$(find /usr/src/kernels -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+        
+        if [ -z "$KERNELS" ]; then
+          echo "❌ No kernel source directory found in /usr/src/kernels"
+          exit 1
+        fi
+        
+        # Verify include and Makefile exist
+        if [ ! -f "$KERNELS/Makefile" ] || [ ! -d "$KERNELS/include" ]; then
+          echo "❌ Kernel source incomplete: missing Makefile or include dir"
+          exit 1
+        fi
+        
+        echo "$KERNELS"
+      args:
+        executable: /bin/bash
+      register: kernel_path_result
+      failed_when: kernel_path_result.rc != 0
+
+    - name: "Extract and verify kernel path"
+      set_fact:
+        kernel_source_path: "{{ kernel_path_result.stdout | trim }}"
+
+    - name: "Display kernel source path"
+      debug:
+        msg: |
+          ✅ Kernel source path:
+          {{ kernel_source_path }}
+
+    - name: "Verify kernel source files"
+      shell: |
+        set -euo pipefail
+        
+        if [ ! -f "{{ kernel_source_path }}/Makefile" ]; then
+          echo "❌ Makefile not found"
+          exit 1
+        fi
+        
+        if [ ! -d "{{ kernel_source_path }}/include" ]; then
+          echo "❌ include directory not found"
+          exit 1
+        fi
+        
+        echo "✅ Kernel source files verified"
+      args:
+        executable: /bin/bash
+
+    - name: "Log kernel source path"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[KERNEL][PATH] {{ kernel_source_path }} — {{ ansible_date_time.iso8601 }}"
+        insertafter: EOF
+
+  rescue:
+    - name: "Log kernel source path detection failure"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[KERNEL][PATH_DETECTION_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }}"
+        insertafter: EOF
+      ignore_errors: yes
+
+    - fail:
+        msg: "Could not locate or verify kernel source directory"
+
+  tags:
+    - kernel
+    - kernel_source
+
+- name: "[KERNEL] Summary"
+  debug:
+    msg: |
+      ✅ KERNEL PREPARATION COMPLETE
+      
+      📦 Kernel Package:
+      ├─ RPM      : {{ kernel_rpm_file }}
+      ├─ Version  : {{ kernel_version }}-{{ kernel_release }}
+      └─ Source   : {{ kernel_source_path }}
+  tags:
+    - kernel
+    - kernel_summary

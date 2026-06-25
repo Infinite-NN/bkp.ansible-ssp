@@ -1,0 +1,165 @@
+---
+# =============================================================
+# Build PCF Module Playbook
+# Purpose: Compile PCF modules from source, generate RPMs
+# Hosts  : buildserver (buildserver group in inventory)
+# =============================================================
+
+- name: Build PCF Module
+  hosts: buildserver
+  become: yes
+  gather_facts: yes
+
+  vars:
+    # PCF Build Configuration (can be overridden via -e flag)
+    pcf_branch: "{{ branch | default('10.2.1.0_orion_int') }}"
+    pcf_build_no: "{{ build_no | default('24800') }}"
+    pcf_module_ver: "{{ module_ver | default('4.3.4.193953') }}"
+    pcf_environment: "{{ environment | default('production') }}"
+    
+    # Build paths
+    pcf_src_root: "/opt/pcf"
+    pcf_build_root: "/tmp/pcf_builds"
+    pcf_releases_dir: "/root/releases"
+    
+    # Build logs
+    pcf_build_log: "/var/log/pcf_build_{{ pcf_build_no }}_{{ ansible_date_time.iso8601_basic_short }}.log"
+
+  pre_tasks:
+    - name: "🔍 Validate PCF build parameters"
+      block:
+        - name: "Validate branch parameter"
+          assert:
+            that:
+              - pcf_branch is defined
+              - pcf_branch | length > 0
+              - pcf_branch is regex('^10\.2\.1\.*_orion_int$')
+            fail_msg: "❌ Invalid PCF branch: {{ pcf_branch }}"
+            success_msg: "✅ Branch validation passed: {{ pcf_branch }}"
+
+        - name: "Validate build number"
+          assert:
+            that:
+              - pcf_build_no is defined
+              - pcf_build_no | string | regex('^[0-9]+$')
+            fail_msg: "❌ Build number must be numeric: {{ pcf_build_no }}"
+            success_msg: "✅ Build number validation passed: {{ pcf_build_no }}"
+
+        - name: "Validate module version format"
+          assert:
+            that:
+              - pcf_module_ver is defined
+              - pcf_module_ver | regex('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+            fail_msg: "❌ Invalid module version format: {{ pcf_module_ver }} (expected x.x.x.xxxxxx)"
+            success_msg: "✅ Module version validation passed: {{ pcf_module_ver }}"
+
+        - name: "Display build configuration"
+          debug:
+            msg: |
+              ╔═══════════════════════════════════╗
+              ║    PCF BUILD CONFIGURATION        ║
+              ╠═══════════════════════════════════╣
+              ║ Branch      : {{ pcf_branch }}
+              ║ Build No    : {{ pcf_build_no }}
+              ║ Module Ver  : {{ pcf_module_ver }}
+              ║ Environment : {{ pcf_environment }}
+              ║ Target Host : {{ inventory_hostname }}
+              ║ Build Root  : {{ pcf_build_root }}
+              ╚═══════════════════════════════════╝
+
+    - name: "📁 Prepare build workspace"
+      block:
+        - name: "Create build directories"
+          file:
+            path: "{{ item }}"
+            state: directory
+            mode: '0755'
+            owner: root
+            group: root
+          loop:
+            - "{{ pcf_build_root }}"
+            - "{{ pcf_releases_dir }}"
+            - "/var/log/pcf_builds"
+
+        - name: "Clean previous build artifacts (safe)"
+          shell: |
+            find {{ pcf_build_root }} -type f -mtime +7 -delete || true
+            echo "✅ Old build artifacts cleaned"
+          changed_when: true
+          register: cleanup_result
+          failed_when: false
+
+        - name: "Display build workspace status"
+          debug:
+            msg: "{{ cleanup_result.stdout }}"
+
+  roles:
+    - role: build_pcf
+      vars:
+        # Pass all build variables to the role
+        build_pcf_branch: "{{ pcf_branch }}"
+        build_pcf_build_no: "{{ pcf_build_no }}"
+        build_pcf_module_ver: "{{ pcf_module_ver }}"
+        build_pcf_environment: "{{ pcf_environment }}"
+        build_pcf_src_root: "{{ pcf_src_root }}"
+        build_pcf_build_root: "{{ pcf_build_root }}"
+        build_pcf_releases_dir: "{{ pcf_releases_dir }}"
+        build_pcf_log: "{{ pcf_build_log }}"
+
+  post_tasks:
+    - name: "✅ PCF Build Post-Tasks"
+      block:
+        - name: "Verify build output"
+          stat:
+            path: "{{ pcf_releases_dir }}"
+          register: releases_stat
+
+        - name: "List generated RPMs"
+          find:
+            paths: "{{ pcf_releases_dir }}"
+            patterns: "*.rpm"
+            file_type: file
+          register: generated_rpms
+
+        - name: "Display build artifacts"
+          debug:
+            msg: |
+              ✅ PCF BUILD COMPLETE
+              Generated {{ generated_rpms.matched }} RPM(s):
+              {{ generated_rpms.files | map(attribute='path') | list | join('\n') }}
+
+        - name: "Generate build manifest"
+          copy:
+            content: |
+              #!/bin/bash
+              # PCF Build Manifest
+              # Generated: {{ ansible_date_time.iso8601 }}
+              
+              BUILD_NUMBER="{{ pcf_build_no }}"
+              BRANCH="{{ pcf_branch }}"
+              MODULE_VERSION="{{ pcf_module_ver }}"
+              ENVIRONMENT="{{ pcf_environment }}"
+              BUILD_HOST="{{ inventory_hostname }}"
+              BUILD_TIMESTAMP="{{ ansible_date_time.iso8601 }}"
+              
+              RPMS_GENERATED={{ generated_rpms.matched }}
+              {% for rpm in generated_rpms.files %}
+              RPM_FILE="{{ rpm.path }}"
+              {% endfor %}
+            dest: "{{ pcf_releases_dir }}/build_manifest_{{ pcf_build_no }}.env"
+            mode: '0644'
+
+      rescue:
+        - name: "⚠️  Build verification warning"
+          debug:
+            msg: "⚠️  Post-build verification encountered issues (non-blocking)"
+
+  handlers:
+    - name: "restart pcf service"
+      systemd:
+        name: pcf
+        state: restarted
+      listen: "restart pcf"
+
+  tags:
+    - always

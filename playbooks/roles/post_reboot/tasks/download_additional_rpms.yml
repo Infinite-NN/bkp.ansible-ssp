@@ -1,0 +1,303 @@
+---
+# =============================================================
+# Post-Reboot — Download Additional Explicitly Requested RPMs
+# Downloads extra packages from BaseOS, AppStream, or any repo
+# =============================================================
+
+- name: "[ADD-RPM] Initialize additional RPM download phase"
+  block:
+    - name: "Log additional RPM download start"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: "[ADD-RPM][START] {{ ansible_date_time.iso8601 }}"
+        create: yes
+
+    - name: "Display additional RPM configuration"
+      debug:
+        msg: |
+          📦 Additional RPM Download Configuration:
+          ├─ BaseOS Packages   : {{ additional_rpms.baseos | default([]) | length }}
+          ├─ AppStream Packages: {{ additional_rpms.appstream | default([]) | length }}
+          ├─ Extra Packages    : {{ additional_rpms.extra | default([]) | length }}
+          └─ Total             : {{ (additional_rpms.baseos | default([]) | length) + (additional_rpms.appstream | default([]) | length) + (additional_rpms.extra | default([]) | length) }}
+
+  tags:
+    - add_rpm
+    - add_rpm_init
+
+---
+
+- name: "[ADD-RPM] Prepare directories"
+  block:
+    - name: "Create repository directories"
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+        recurse: yes
+      loop:
+        - "{{ repo_baseos_path }}"
+        - "{{ repo_appstream_path }}"
+        - "{{ additional_rpms_dir }}"
+
+  tags:
+    - add_rpm
+    - add_rpm_dirs
+
+---
+
+- name: "[ADD-RPM] Download BaseOS additional packages"
+  block:
+    - name: "Display BaseOS packages to download"
+      debug:
+        msg: |
+          📦 BaseOS Packages ({{ additional_rpms.baseos | default([]) | length }}):
+          {{ additional_rpms.baseos | default([]) | join('\n') }}
+      when: additional_rpms.baseos | default([]) | length > 0
+
+    - name: "Download each BaseOS package"
+      shell: |
+        set -euo pipefail
+
+        PKG="{{ item }}"
+        DEST="{{ repo_baseos_path }}"
+        REPO="{{ dnf_repo_baseos }}"
+
+        echo "⬇️  Downloading BaseOS: $PKG"
+
+        # Check if already downloaded
+        EXISTING=$(find "$DEST" -name "${PKG}-[0-9]*" -o -name "${PKG}.*.rpm" 2>/dev/null | head -1)
+        
+        if [ -n "$EXISTING" ]; then
+          echo "✅ Already present: $(basename "$EXISTING")"
+          exit 0
+        fi
+
+        # Download package
+        if dnf download \
+           --destdir="$DEST" \
+           --repo="$REPO" \
+           "$PKG" \
+           2>&1 | grep -qE "(Downloaded|Skipping|Resolving|Package|->|Verifying)"; then
+          DOWNLOADED=$(find "$DEST" -name "${PKG}-[0-9]*.rpm" -type f 2>/dev/null | head -1)
+          if [ -n "$DOWNLOADED" ]; then
+            echo "✅ Downloaded: $(basename "$DOWNLOADED")"
+          else
+            echo "⚠️  Download may have failed (file not found)"
+          fi
+        else
+          echo "⚠️  Could not download $PKG (may not exist in repo)"
+        fi
+      args:
+        executable: /bin/bash
+      loop: "{{ additional_rpms.baseos | default([]) }}"
+      register: baseos_add_results
+      changed_when: "'Downloaded' in baseos_add_results.stdout"
+      failed_when: false
+      when: additional_rpms.baseos | default([]) | length > 0
+
+    - name: "Summarize BaseOS downloads"
+      debug:
+        msg: |
+          BaseOS Download Summary:
+          {{ baseos_add_results.results | map(attribute='stdout') | list | join('\n') }}
+      when: baseos_add_results.results is defined
+
+  rescue:
+    - debug:
+        msg: "⚠️  BaseOS additional package download had issues (continuing)"
+
+  tags:
+    - add_rpm
+    - add_rpm_baseos
+
+---
+
+- name: "[ADD-RPM] Download AppStream additional packages"
+  block:
+    - name: "Display AppStream packages to download"
+      debug:
+        msg: |
+          📦 AppStream Packages ({{ additional_rpms.appstream | default([]) | length }}):
+          {{ additional_rpms.appstream | default([]) | join('\n') }}
+      when: additional_rpms.appstream | default([]) | length > 0
+
+    - name: "Download each AppStream package"
+      shell: |
+        set -euo pipefail
+
+        PKG="{{ item }}"
+        DEST="{{ repo_appstream_path }}"
+        REPO="{{ dnf_repo_appstream }}"
+
+        echo "⬇️  Downloading AppStream: $PKG"
+
+        # Check if already downloaded
+        EXISTING=$(find "$DEST" -name "${PKG}-[0-9]*" -o -name "${PKG}.*.rpm" 2>/dev/null | head -1)
+        
+        if [ -n "$EXISTING" ]; then
+          echo "✅ Already present: $(basename "$EXISTING")"
+          exit 0
+        fi
+
+        # Download package
+        if dnf download \
+           --destdir="$DEST" \
+           --repo="$REPO" \
+           "$PKG" \
+           2>&1 | grep -qE "(Downloaded|Skipping|Resolving|Package|->|Verifying)"; then
+          DOWNLOADED=$(find "$DEST" -name "${PKG}-[0-9]*.rpm" -type f 2>/dev/null | head -1)
+          if [ -n "$DOWNLOADED" ]; then
+            echo "✅ Downloaded: $(basename "$DOWNLOADED")"
+          else
+            echo "⚠️  Download may have failed"
+          fi
+        else
+          echo "⚠️  Could not download $PKG"
+        fi
+      args:
+        executable: /bin/bash
+      loop: "{{ additional_rpms.appstream | default([]) }}"
+      register: appstream_add_results
+      changed_when: "'Downloaded' in appstream_add_results.stdout"
+      failed_when: false
+      when: additional_rpms.appstream | default([]) | length > 0
+
+    - name: "Summarize AppStream downloads"
+      debug:
+        msg: |
+          AppStream Download Summary:
+          {{ appstream_add_results.results | map(attribute='stdout') | list | join('\n') }}
+      when: appstream_add_results.results is defined
+
+  rescue:
+    - debug:
+        msg: "⚠️  AppStream additional package download had issues"
+
+  tags:
+    - add_rpm
+    - add_rpm_appstream
+
+---
+
+- name: "[ADD-RPM] Download extra packages (any enabled repo)"
+  block:
+    - name: "Display extra packages to download"
+      debug:
+        msg: |
+          📦 Extra Packages ({{ additional_rpms.extra | default([]) | length }}):
+          {{ additional_rpms.extra | default([]) | join('\n') }}
+      when: additional_rpms.extra | default([]) | length > 0
+
+    - name: "Download each extra package"
+      shell: |
+        set -euo pipefail
+
+        PKG="{{ item }}"
+        DEST="{{ additional_rpms_dir }}"
+
+        echo "⬇️  Downloading Extra: $PKG"
+
+        # Check if already downloaded
+        EXISTING=$(find "$DEST" -name "${PKG}-[0-9]*" 2>/dev/null | head -1)
+        
+        if [ -n "$EXISTING" ]; then
+          echo "✅ Already present: $(basename "$EXISTING")"
+          exit 0
+        fi
+
+        # Download package from any enabled repo
+        if dnf download \
+           --destdir="$DEST" \
+           "$PKG" \
+           2>&1 | grep -qE "(Downloaded|Verifying)"; then
+          DOWNLOADED=$(find "$DEST" -name "${PKG}-[0-9]*.rpm" -type f 2>/dev/null | head -1)
+          if [ -n "$DOWNLOADED" ]; then
+            echo "✅ Downloaded: $(basename "$DOWNLOADED")"
+          fi
+        else
+          echo "⚠️  Could not download $PKG (may not exist)"
+        fi
+      args:
+        executable: /bin/bash
+      loop: "{{ additional_rpms.extra | default([]) }}"
+      register: extra_add_results
+      changed_when: "'Downloaded' in extra_add_results.stdout"
+      failed_when: false
+      when: additional_rpms.extra | default([]) | length > 0
+
+    - name: "Summarize extra downloads"
+      debug:
+        msg: |
+          Extra Download Summary:
+          {{ extra_add_results.results | map(attribute='stdout') | list | join('\n') }}
+      when: extra_add_results.results is defined
+
+  rescue:
+    - debug:
+        msg: "⚠️  Extra package download had issues"
+
+  tags:
+    - add_rpm
+    - add_rpm_extra
+
+---
+
+- name: "[ADD-RPM] Final count and summary"
+  block:
+    - name: "Count all downloaded additional RPMs"
+      shell: |
+        BASEOS=$(find "{{ repo_baseos_path }}" -name "*.rpm" -type f 2>/dev/null | wc -l || echo 0)
+        APPSTREAM=$(find "{{ repo_appstream_path }}" -name "*.rpm" -type f 2>/dev/null | wc -l || echo 0)
+        EXTRA=$(find "{{ additional_rpms_dir }}" -name "*.rpm" -type f 2>/dev/null | wc -l || echo 0)
+        TOTAL=$((BASEOS + APPSTREAM + EXTRA))
+        
+        echo "BASEOS=$BASEOS|APPSTREAM=$APPSTREAM|EXTRA=$EXTRA|TOTAL=$TOTAL"
+      args:
+        executable: /bin/bash
+      register: add_rpm_count
+      changed_when: false
+
+    - name: "Parse download counts"
+      set_fact:
+        add_rpm_baseos: "{{ (add_rpm_count.stdout | split('|')[0].split('=')[1]) }}"
+        add_rpm_appstream: "{{ (add_rpm_count.stdout | split('|')[1].split('=')[1]) }}"
+        add_rpm_extra: "{{ (add_rpm_count.stdout | split('|')[2].split('=')[1]) }}"
+        add_rpm_total: "{{ (add_rpm_count.stdout | split('|')[3].split('=')[1]) }}"
+
+    - name: "Display final summary"
+      debug:
+        msg: |
+          ✅ ADDITIONAL RPM DOWNLOAD COMPLETE
+          
+          📦 RPM Inventory:
+          ├─ BaseOS    : {{ add_rpm_baseos }}
+          ├─ AppStream : {{ add_rpm_appstream }}
+          ├─ Extra     : {{ add_rpm_extra }}
+          └─ Total     : {{ add_rpm_total }}
+          
+          Next: Update SSP with RPMs...
+
+    - name: "Log completion"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: |
+          [ADD-RPM][SUCCESS] {{ ansible_date_time.iso8601 }}
+          BaseOS: {{ add_rpm_baseos }} | AppStream: {{ add_rpm_appstream }} | Extra: {{ add_rpm_extra }} | Total: {{ add_rpm_total }}
+        create: yes
+
+  tags:
+    - add_rpm
+    - add_rpm_summary
+
+---
+
+- name: "[ADD-RPM] Phase completion"
+  lineinfile:
+    path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+    line: "[ADD-RPM][END] {{ ansible_date_time.iso8601 }}"
+    create: yes
+  ignore_errors: yes
+  tags:
+    - add_rpm
+    - always

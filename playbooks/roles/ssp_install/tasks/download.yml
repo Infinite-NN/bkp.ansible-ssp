@@ -1,0 +1,372 @@
+---
+# =============================================================
+# SSP Install — Download Task
+# Fetches and validates SSP package from artifact server
+# =============================================================
+
+- name: "[DOWNLOAD] Initialize download phase"
+  block:
+    - name: "Log download phase start"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: |
+          [DOWNLOAD][START] {{ ansible_date_time.iso8601 }}
+          Artifact Server: {{ artifact_server.base_url }}
+          SSP Path       : {{ artifact_server.ssp_path }}
+        create: yes
+
+    - name: "Display download configuration"
+      debug:
+        msg: |
+          📥 SSP Download Configuration:
+          ├─ Server   : {{ artifact_server.base_url }}
+          ├─ Path     : {{ artifact_server.ssp_path }}
+          ├─ Timeout  : {{ download_timeout }}s
+          ├─ Retries  : {{ download_max_retries }}
+          └─ Dest     : {{ ssp_work_dir }}
+
+  tags:
+    - download
+    - download_init
+
+---
+
+- name: "[DOWNLOAD] Fetch artifact server index page"
+  block:
+    - name: "Query SSP directory listing"
+      uri:
+        url: "{{ artifact_server.base_url }}/{{ artifact_server.ssp_path }}"
+        return_content: yes
+        timeout: "{{ download_timeout }}"
+        status_code: [200, 301, 302]
+        follow_redirects: all
+        validate_certs: "{{ download_verify_ssl | default(false) }}"
+      register: ssp_index_page
+      retries: "{{ download_max_retries }}"
+      delay: "{{ download_retry_delay }}"
+      until: ssp_index_page.status == 200
+
+    - name: "Verify page contains content"
+      assert:
+        that:
+          - ssp_index_page.content | length > 0
+          - ssp_index_page.status == 200
+        fail_msg: "❌ Empty response from artifact server"
+        success_msg: "✅ Artifact server responsive"
+
+  rescue:
+    - name: "Log server accessibility failure"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: "[DOWNLOAD][SERVER_ERROR] Cannot reach {{ artifact_server.base_url }} — {{ ansible_failed_result.msg | default('Unknown') }}"
+        create: yes
+      ignore_errors: yes
+
+    - fail:
+        msg: |
+          ❌ Cannot reach artifact server: {{ artifact_server.base_url }}
+          Error: {{ ansible_failed_result.msg }}
+
+  tags:
+    - download
+    - download_index
+
+---
+
+- name: "[DOWNLOAD] Extract and validate SSP version"
+  block:
+    - name: "Search for SSP version in index page"
+      set_fact:
+        detected_versions: "{{ ssp_index_page.content | regex_findall(ssp_version_pattern) | select('match', '^10\\.2\\.1') | list | sort | unique }}"
+
+    - name: "Select latest SSP version"
+      set_fact:
+        latest_version: "{{ detected_versions | last }}"
+
+    - name: "Validate version was detected"
+      assert:
+        that:
+          - latest_version is defined
+          - latest_version | length > 0
+          - latest_version is match('^10\\.2\\.1')
+        fail_msg: |
+          ❌ No SSP version matching pattern detected
+          Pattern: {{ ssp_version_pattern }}
+          Server response (first 2000 chars):
+          {{ ssp_index_page.content[:2000] }}
+        success_msg: "✅ SSP Version detected: {{ latest_version }}"
+
+    - name: "Display detected version"
+      debug:
+        msg: |
+          🔍 Detected Versions:
+          ├─ Available: {{ detected_versions | join(', ') }}
+          └─ Selected : {{ latest_version }}
+
+  rescue:
+    - name: "Log version detection failure"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: "[DOWNLOAD][VERSION_ERROR] {{ ansible_failed_result.msg | default('Unknown') }}"
+        create: yes
+      ignore_errors: yes
+
+    - fail:
+        msg: "{{ ansible_failed_result.msg }}"
+
+  tags:
+    - download
+    - download_version
+
+---
+
+- name: "[DOWNLOAD] Fetch archive listing for selected version"
+  block:
+    - name: "Query archive directory"
+      uri:
+        url: "{{ artifact_server.base_url }}/{{ artifact_server.ssp_path }}/{{ latest_version }}/archive/"
+        return_content: yes
+        timeout: "{{ download_timeout }}"
+        status_code: [200, 301, 302]
+        follow_redirects: all
+        validate_certs: "{{ download_verify_ssl | default(false) }}"
+      register: archive_index_page
+      retries: "{{ download_max_retries }}"
+      delay: "{{ download_retry_delay }}"
+      until: archive_index_page.status == 200
+
+    - name: "Verify archive page returned content"
+      assert:
+        that:
+          - archive_index_page.content | length > 0
+        fail_msg: "❌ Archive page is empty"
+        success_msg: "✅ Archive listing retrieved"
+
+  rescue:
+    - fail:
+        msg: |
+          ❌ Cannot retrieve archive listing for version: {{ latest_version }}
+          URL: {{ artifact_server.base_url }}/{{ artifact_server.ssp_path }}/{{ latest_version }}/archive/
+
+  tags:
+    - download
+    - download_archive
+
+---
+
+- name: "[DOWNLOAD] Extract TAR filename"
+  block:
+    - name: "Search for TAR files in archive listing"
+      set_fact:
+        tar_files_found: "{{ archive_index_page.content | regex_findall(ssp_tar_pattern) | select('match', '.*\\.tar$') | list | sort | unique }}"
+
+    - name: "Select latest TAR file"
+      set_fact:
+        latest_tar: "{{ tar_files_found | last }}"
+
+    - name: "Validate TAR file was found"
+      assert:
+        that:
+          - latest_tar is defined
+          - latest_tar | length > 0
+          - latest_tar is match('.*\\.tar$')
+        fail_msg: |
+          ❌ No TAR files found matching pattern: {{ ssp_tar_pattern }}
+          Archive page content (first 2000 chars):
+          {{ archive_index_page.content[:2000] }}
+        success_msg: "✅ TAR file detected: {{ latest_tar }}"
+
+    - name: "Display TAR file selection"
+      debug:
+        msg: |
+          📦 TAR File Selection:
+          ├─ Available: {{ tar_files_found | join(', ') if tar_files_found | length <= 5 else tar_files_found[:3] | join(', ') + '... and ' + ((tar_files_found | length) - 3) | string + ' more' }}
+          └─ Selected : {{ latest_tar }}
+
+  rescue:
+    - name: "Log TAR detection failure"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: "[DOWNLOAD][TAR_ERROR] {{ ansible_failed_result.msg | default('Unknown') }}"
+        create: yes
+      ignore_errors: yes
+
+    - fail:
+        msg: "{{ ansible_failed_result.msg }}"
+
+  tags:
+    - download
+    - download_tar_select
+
+---
+
+- name: "[DOWNLOAD] Download SSP TAR file"
+  block:
+    - name: "Prepare download destination"
+      file:
+        path: "{{ ssp_work_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: "Remove any existing TAR with same name"
+      file:
+        path: "{{ ssp_work_dir }}/{{ latest_tar }}"
+        state: absent
+
+    - name: "Download SSP TAR with robust retry logic"
+      shell: |
+        set -euo pipefail
+
+        DEST="{{ ssp_work_dir }}/{{ latest_tar }}"
+        URL="{{ artifact_server.base_url }}/{{ artifact_server.ssp_path }}/{{ latest_version }}/archive/{{ latest_tar }}"
+        
+        echo "⬇️  Downloading: {{ latest_tar }}"
+        echo "URL: $URL"
+        echo "Destination: $DEST"
+        echo ""
+
+        # Download with curl - includes retries, timeouts, and bandwidth limits
+        curl -L \
+          --fail \
+          --progress-bar \
+          --retry {{ download_max_retries }} \
+          --retry-delay {{ download_retry_delay }} \
+          --retry-max-time {{ download_timeout }} \
+          --connect-timeout {{ download_connect_timeout }} \
+          --max-time {{ download_timeout }} \
+          --speed-limit 1000 \
+          --speed-time 10 \
+          -o "$DEST" \
+          "$URL"
+
+        CURL_RC=$?
+        
+        if [ $CURL_RC -ne 0 ]; then
+          echo "❌ Download failed with curl rc=$CURL_RC"
+          exit $CURL_RC
+        fi
+
+        # Verify file was created
+        if [ ! -f "$DEST" ]; then
+          echo "❌ Download file not found after curl"
+          exit 1
+        fi
+
+        FILE_SIZE=$(stat -c%s "$DEST")
+        echo "✅ Download complete: $((FILE_SIZE / 1048576))MB"
+      args:
+        executable: /bin/bash
+      register: download_result
+      retries: 3
+      delay: 60
+      until: download_result.rc == 0
+      timeout: "{{ (download_timeout * 2) + 300 }}"
+
+    - name: "Display download result"
+      debug:
+        msg: "{{ download_result.stdout_lines }}"
+
+  rescue:
+    - name: "Log download failure"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: "[DOWNLOAD][FAILED] {{ ansible_failed_result.msg | default('Unknown') }}"
+        create: yes
+      ignore_errors: yes
+
+    - fail:
+        msg: |
+          ❌ TAR download failed
+          URL: {{ artifact_server.base_url }}/{{ artifact_server.ssp_path }}/{{ latest_version }}/archive/{{ latest_tar }}
+          Error: {{ ansible_failed_result.msg }}
+
+  tags:
+    - download
+    - download_file
+
+---
+
+- name: "[DOWNLOAD] Validate downloaded TAR file"
+  block:
+    - name: "Verify TAR file exists"
+      stat:
+        path: "{{ ssp_work_dir }}/{{ latest_tar }}"
+        get_checksum: yes
+        checksum_algorithm: md5
+      register: tar_stat
+
+    - name: "Validate TAR exists and has minimum size"
+      assert:
+        that:
+          - tar_stat.stat.exists
+          - tar_stat.stat.size >= ssp_tar_min_size_bytes | int
+        fail_msg: |
+          ❌ TAR file validation failed
+          File exists: {{ tar_stat.stat.exists }}
+          File size  : {{ tar_stat.stat.size | default(0) }} bytes
+          Minimum    : {{ ssp_tar_min_size_bytes }} bytes
+        success_msg: |
+          ✅ TAR file valid
+          Size: {{ (tar_stat.stat.size / 1048576) | round(2) }}MB
+          MD5 : {{ tar_stat.stat.checksum }}
+
+    - name: "Validate TAR file structure (archive integrity check)"
+      shell: |
+        set -euo pipefail
+        
+        TAR_FILE="{{ ssp_work_dir }}/{{ latest_tar }}"
+        
+        echo "Checking TAR file integrity..."
+        if ! tar -tf "$TAR_FILE" > /dev/null 2>&1; then
+          echo "❌ TAR file is corrupted"
+          exit 1
+        fi
+        
+        # Count files in TAR
+        FILE_COUNT=$(tar -tf "$TAR_FILE" | wc -l)
+        echo "✅ TAR integrity verified: $FILE_COUNT files"
+      args:
+        executable: /bin/bash
+
+    - name: "Log TAR validation success"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: |
+          [DOWNLOAD][VALIDATED] {{ latest_tar }}
+          Size    : {{ tar_stat.stat.size }} bytes
+          MD5     : {{ tar_stat.stat.checksum }}
+          Time    : {{ ansible_date_time.iso8601 }}
+        create: yes
+
+  rescue:
+    - name: "Log TAR validation failure"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: "[DOWNLOAD][VALIDATION_FAILED] {{ ansible_failed_result.msg | default('Unknown') }}"
+        create: yes
+      ignore_errors: yes
+
+    - fail:
+        msg: "TAR file validation failed — {{ ansible_failed_result.msg }}"
+
+  tags:
+    - download
+    - download_validate
+
+---
+
+- name: "[DOWNLOAD] Final logging"
+  debug:
+    msg: |
+      ✅ DOWNLOAD PHASE COMPLETE
+      
+      📦 Package Information:
+      ├─ Version : {{ latest_version }}
+      ├─ Filename: {{ latest_tar }}
+      ├─ Location: {{ ssp_work_dir }}/{{ latest_tar }}
+      └─ Status  : Ready for extraction
+      
+      Next: Extract package...
+  tags:
+    - download
+    - download_summary

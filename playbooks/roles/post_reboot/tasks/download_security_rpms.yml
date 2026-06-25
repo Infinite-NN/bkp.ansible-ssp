@@ -1,0 +1,371 @@
+---
+# =============================================================
+# Post-Reboot — Download Security RPMs from RHEL Repositories
+# Fetches critical and security updates for BaseOS + AppStream
+# =============================================================
+
+- name: "[SEC-RPM] Initialize security RPM download phase"
+  block:
+    - name: "Log download start"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: "[SEC-RPM][START] {{ ansible_date_time.iso8601 }}"
+        create: yes
+
+    - name: "Display repository configuration"
+      debug:
+        msg: |
+          📦 Security RPM Download Configuration:
+          ├─ BaseOS Repo      : {{ dnf_repo_baseos }}
+          ├─ AppStream Repo   : {{ dnf_repo_appstream }}
+          ├─ Destination Base : {{ repo_base }}
+          └─ Timeout          : {{ download_security_rpms_timeout | default(1200) }}s
+
+  tags:
+    - sec_rpm
+    - sec_rpm_init
+
+---
+
+- name: "[SEC-RPM] Prepare repository directories"
+  block:
+    - name: "Create repository directory structure"
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+        recurse: yes
+      loop:
+        - "{{ repo_base }}"
+        - "{{ repo_baseos_path }}"
+        - "{{ repo_appstream_path }}"
+        - "{{ repo_archive_base }}"
+        - "{{ repo_archive_base }}/BaseOS"
+        - "{{ repo_archive_base }}/AppStream"
+
+    - name: "Display created structure"
+      debug:
+        msg: |
+          ✅ Directory structure created:
+          ├─ {{ repo_baseos_path }}
+          ├─ {{ repo_appstream_path }}
+          └─ {{ repo_archive_base }}/{BaseOS,AppStream}
+
+  rescue:
+    - fail:
+        msg: "Cannot create repository directories — {{ ansible_failed_result.msg }}"
+
+  tags:
+    - sec_rpm
+    - sec_rpm_dirs
+
+---
+
+- name: "[SEC-RPM] Validate DNF repositories"
+  block:
+    - name: "Check if BaseOS repo is enabled"
+      shell: dnf repolist --enabled | grep -q "{{ dnf_repo_baseos }}"
+      register: baseos_repo_check
+      changed_when: false
+      failed_when: false
+
+    - name: "Check if AppStream repo is enabled"
+      shell: dnf repolist --enabled | grep -q "{{ dnf_repo_appstream }}"
+      register: appstream_repo_check
+      changed_when: false
+      failed_when: false
+
+    - name: "Display repo status"
+      debug:
+        msg: |
+          📋 Repository Status:
+          ├─ BaseOS   : {{ 'ENABLED' if baseos_repo_check.rc == 0 else 'NOT FOUND (may still work)' }}
+          └─ AppStream: {{ 'ENABLED' if appstream_repo_check.rc == 0 else 'NOT FOUND (may still work)' }}
+
+    - name: "List all enabled repositories"
+      shell: dnf repolist --enabled | head -10
+      register: repo_list
+      changed_when: false
+
+    - debug:
+        msg: |
+          Available repositories:
+          {{ repo_list.stdout }}
+
+  rescue:
+    - debug:
+        msg: "⚠️  Repository validation warning (will attempt download anyway)"
+
+  tags:
+    - sec_rpm
+    - sec_rpm_validate
+
+---
+
+- name: "[SEC-RPM] Clean and rebuild DNF cache"
+  block:
+    - name: "Clean DNF cache"
+      command: dnf clean all
+      changed_when: true
+      register: dnf_clean
+      timeout: 60
+
+    - name: "Rebuild DNF metadata cache"
+      shell: |
+        set -euo pipefail
+        
+        echo "Building DNF cache..."
+        dnf makecache 2>&1 | tail -5
+        
+        echo "✅ DNF cache rebuilt"
+      args:
+        executable: /bin/bash
+      register: dnf_makecache
+      retries: 3
+      delay: 15
+      until: dnf_makecache.rc == 0
+      timeout: 300
+
+    - debug:
+        msg: "{{ dnf_makecache.stdout }}"
+
+  rescue:
+    - debug:
+        msg: "⚠️  DNF cache refresh warning (continuing with download)"
+
+  tags:
+    - sec_rpm
+    - sec_rpm_cache
+
+---
+
+- name: "[SEC-RPM] Download BaseOS security updates"
+  block:
+    - name: "Download BaseOS security RPMs"
+      shell: |
+        set -euo pipefail
+
+        DEST="{{ repo_baseos_path }}"
+        REPO="{{ dnf_repo_baseos }}"
+
+        echo "⬇️  Downloading BaseOS security updates..."
+        echo "Destination: $DEST"
+        echo "Repository : $REPO"
+        echo ""
+
+        # Use dnf download --security to get security advisories
+        # Using --downloadonly to avoid actual installation
+        COUNT_BEFORE=$(find "$DEST" -name "*.rpm" 2>/dev/null | wc -l || echo 0)
+
+        dnf download \
+          --security \
+          --downloadonly \
+          --destdir="$DEST" \
+          --repo="$REPO" \
+          --exclude="nginx*,docker*,podman*" \
+          --disableexcludes=all \
+          -y \
+          2>&1 | tail -20
+
+        COUNT_AFTER=$(find "$DEST" -name "*.rpm" 2>/dev/null | wc -l || echo 0)
+        DOWNLOADED=$((COUNT_AFTER - COUNT_BEFORE))
+
+        if [ $DOWNLOADED -gt 0 ]; then
+          echo "✅ Downloaded $DOWNLOADED BaseOS security RPM(s)"
+        else
+          echo "⚠️  No new BaseOS security RPMs downloaded (may already be latest)"
+        fi
+
+        find "$DEST" -name "*.rpm" -type f | wc -l | xargs echo "Total BaseOS RPMs: "
+      args:
+        executable: /bin/bash
+      register: baseos_download
+      timeout: "{{ download_security_rpms_timeout | default(1200) }}"
+      changed_when: true
+      failed_when: false
+
+    - name: "Display BaseOS download result"
+      debug:
+        msg: "{{ baseos_download.stdout_lines }}"
+
+    - name: "Count downloaded BaseOS RPMs"
+      find:
+        paths: "{{ repo_baseos_path }}"
+        patterns: "*.rpm"
+        file_type: file
+        recurse: yes
+      register: baseos_rpms_final
+
+  rescue:
+    - debug:
+        msg: "⚠️  BaseOS download encountered issues (will continue with AppStream)"
+
+  tags:
+    - sec_rpm
+    - sec_rpm_baseos
+
+---
+
+- name: "[SEC-RPM] Download AppStream security updates"
+  block:
+    - name: "Download AppStream security RPMs"
+      shell: |
+        set -euo pipefail
+
+        DEST="{{ repo_appstream_path }}"
+        REPO="{{ dnf_repo_appstream }}"
+
+        echo "⬇️  Downloading AppStream security updates..."
+        echo "Destination: $DEST"
+        echo "Repository : $REPO"
+        echo ""
+
+        COUNT_BEFORE=$(find "$DEST" -name "*.rpm" 2>/dev/null | wc -l || echo 0)
+
+        dnf download \
+          --security \
+          --downloadonly \
+          --destdir="$DEST" \
+          --repo="$REPO" \
+          --exclude="nginx*,docker*,podman*" \
+          --disableexcludes=all \
+          -y \
+          2>&1 | tail -20
+
+        COUNT_AFTER=$(find "$DEST" -name "*.rpm" 2>/dev/null | wc -l || echo 0)
+        DOWNLOADED=$((COUNT_AFTER - COUNT_BEFORE))
+
+        if [ $DOWNLOADED -gt 0 ]; then
+          echo "✅ Downloaded $DOWNLOADED AppStream security RPM(s)"
+        else
+          echo "⚠️  No new AppStream security RPMs downloaded"
+        fi
+
+        find "$DEST" -name "*.rpm" -type f | wc -l | xargs echo "Total AppStream RPMs: "
+      args:
+        executable: /bin/bash
+      register: appstream_download
+      timeout: "{{ download_security_rpms_timeout | default(1200) }}"
+      changed_when: true
+      failed_when: false
+
+    - name: "Display AppStream download result"
+      debug:
+        msg: "{{ appstream_download.stdout_lines }}"
+
+    - name: "Count downloaded AppStream RPMs"
+      find:
+        paths: "{{ repo_appstream_path }}"
+        patterns: "*.rpm"
+        file_type: file
+        recurse: yes
+      register: appstream_rpms_final
+
+  rescue:
+    - debug:
+        msg: "⚠️  AppStream download encountered issues (continuing)"
+
+  tags:
+    - sec_rpm
+    - sec_rpm_appstream
+
+---
+
+- name: "[SEC-RPM] Clean up i686 and duplicate RPMs"
+  block:
+    - name: "Remove 32-bit (i686) RPMs from BaseOS"
+      shell: |
+        COUNT=$(find "{{ repo_baseos_path }}" -name "*.i686.rpm" -type f 2>/dev/null | wc -l)
+        if [ $COUNT -gt 0 ]; then
+          find "{{ repo_baseos_path }}" -name "*.i686.rpm" -delete
+          echo "Removed $COUNT i686 BaseOS RPMs"
+        else
+          echo "No i686 BaseOS RPMs to remove"
+        fi
+      args:
+        executable: /bin/bash
+      register: baseos_cleanup
+      changed_when: "'Removed' in baseos_cleanup.stdout"
+
+    - name: "Remove 32-bit (i686) RPMs from AppStream"
+      shell: |
+        COUNT=$(find "{{ repo_appstream_path }}" -name "*.i686.rpm" -type f 2>/dev/null | wc -l)
+        if [ $COUNT -gt 0 ]; then
+          find "{{ repo_appstream_path }}" -name "*.i686.rpm" -delete
+          echo "Removed $COUNT i686 AppStream RPMs"
+        else
+          echo "No i686 AppStream RPMs to remove"
+        fi
+      args:
+        executable: /bin/bash
+      register: appstream_cleanup
+      changed_when: "'Removed' in appstream_cleanup.stdout"
+
+    - debug:
+        msg: |
+          {{ baseos_cleanup.stdout }}
+          {{ appstream_cleanup.stdout }}
+
+  tags:
+    - sec_rpm
+    - sec_rpm_cleanup
+
+---
+
+- name: "[SEC-RPM] Final summary and logging"
+  block:
+    - name: "Count final security RPMs"
+      shell: |
+        BASEOS=$(find "{{ repo_baseos_path }}" -name "*.rpm" -type f 2>/dev/null | wc -l || echo 0)
+        APPSTREAM=$(find "{{ repo_appstream_path }}" -name "*.rpm" -type f 2>/dev/null | wc -l || echo 0)
+        TOTAL=$((BASEOS + APPSTREAM))
+        
+        echo "BASEOS=$BASEOS"
+        echo "APPSTREAM=$APPSTREAM"
+        echo "TOTAL=$TOTAL"
+      args:
+        executable: /bin/bash
+      register: sec_rpm_count
+      changed_when: false
+
+    - name: "Parse RPM counts"
+      set_fact:
+        sec_rpm_baseos_count: "{{ (sec_rpm_count.stdout | regex_search('BASEOS=(\\d+)', '\\1') | first) }}"
+        sec_rpm_appstream_count: "{{ (sec_rpm_count.stdout | regex_search('APPSTREAM=(\\d+)', '\\1') | first) }}"
+        sec_rpm_total_count: "{{ (sec_rpm_count.stdout | regex_search('TOTAL=(\\d+)', '\\1') | first) }}"
+
+    - name: "Display final summary"
+      debug:
+        msg: |
+          ✅ SECURITY RPM DOWNLOAD COMPLETE
+          
+          📦 RPM Summary:
+          ├─ BaseOS   : {{ sec_rpm_baseos_count }}
+          ├─ AppStream: {{ sec_rpm_appstream_count }}
+          └─ Total    : {{ sec_rpm_total_count }}
+          
+          Next: Process downloaded RPMs...
+
+    - name: "Log download completion"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: |
+          [SEC-RPM][SUCCESS] {{ ansible_date_time.iso8601 }}
+          BaseOS: {{ sec_rpm_baseos_count }} | AppStream: {{ sec_rpm_appstream_count }} | Total: {{ sec_rpm_total_count }}
+        create: yes
+
+  tags:
+    - sec_rpm
+    - sec_rpm_summary
+
+---
+
+- name: "[SEC-RPM] Phase completion"
+  lineinfile:
+    path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+    line: "[SEC-RPM][END] {{ ansible_date_time.iso8601 }}"
+    create: yes
+  ignore_errors: yes
+  tags:
+    - sec_rpm
+    - always

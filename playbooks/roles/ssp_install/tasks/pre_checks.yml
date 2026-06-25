@@ -1,0 +1,410 @@
+---
+# =============================================================
+# SSP Install — Pre-installation Checks
+# Validates system prerequisites before SSP installation
+# =============================================================
+
+- name: "[PRE] Initialize pre-check log"
+  block:
+    - name: "Create pre-check marker"
+      copy:
+        content: |
+          SSP Pre-Installation Checks
+          Started: {{ ansible_date_time.iso8601 }}
+          Host   : {{ inventory_hostname }}
+          
+          ============================================================
+          Phase 1: Aggressive Cleanup
+          ============================================================
+        dest: "{{ log_dir }}/pre_checks_{{ ansible_date_time.date }}.log"
+        mode: '0644'
+
+    - name: "Store pre-check log path"
+      set_fact:
+        ssp_pre_check_log: "{{ log_dir }}/pre_checks_{{ ansible_date_time.date }}.log"
+
+  tags:
+    - pre_checks
+    - always
+
+- name: "[PRE] Aggressive cleanup — Remove old artifacts"
+  block:
+    - name: "Define cleanup targets"
+      set_fact:
+        cleanup_dirs:
+          - path: "{{ ssp.backup_path }}"
+            pattern: "*.bak.*"
+            desc: "Old SSP backups"
+          - path: "/opt/ssp_work"
+            pattern: "*.bak.*"
+            desc: "Old work backups"
+        
+        cleanup_files:
+          - path: "/opt/ssp_work"
+            pattern: "*.tar*"
+            desc: "Old TAR archives in work dir"
+          - path: "/opt/ssp"
+            pattern: "*.tgz"
+            desc: "Old nested TGZ files"
+          - path: "/opt/ssp"
+            pattern: "*.md5"
+            desc: "Old MD5 files"
+          - path: "/tmp"
+            pattern: "ssp_*"
+            desc: "SSP temporary files"
+
+    - name: "Remove old backup directories"
+      shell: |
+        TARGET="{{ item.path }}"
+        PATTERN="{{ item.pattern }}"
+        DESC="{{ item.desc }}"
+        
+        if [ -d "$TARGET" ]; then
+          COUNT=$(find "$TARGET" -maxdepth 1 -type d -name "$PATTERN" 2>/dev/null | wc -l)
+          if [ "$COUNT" -gt 0 ]; then
+            echo "Removing $COUNT ${DESC} from $TARGET"
+            find "$TARGET" -maxdepth 1 -type d -name "$PATTERN" -exec rm -rf {} + 2>/dev/null || true
+            echo "✅ Removed"
+          fi
+        fi
+      loop: "{{ cleanup_dirs }}"
+      args:
+        executable: /bin/bash
+      changed_when: true
+      ignore_errors: yes
+
+    - name: "Remove old artifact files"
+      shell: |
+        TARGET="{{ item.path }}"
+        PATTERN="{{ item.pattern }}"
+        DESC="{{ item.desc }}"
+        
+        if [ -d "$TARGET" ]; then
+          COUNT=$(find "$TARGET" -maxdepth 2 -type f -name "$PATTERN" 2>/dev/null | wc -l)
+          if [ "$COUNT" -gt 0 ]; then
+            echo "Removing $COUNT ${DESC} from $TARGET"
+            find "$TARGET" -maxdepth 2 -type f -name "$PATTERN" -delete 2>/dev/null || true
+            echo "✅ Removed"
+          fi
+        fi
+      loop: "{{ cleanup_files }}"
+      args:
+        executable: /bin/bash
+      changed_when: true
+      ignore_errors: yes
+
+    - name: "Clean DNF package manager cache"
+      command: dnf clean all
+      changed_when: true
+      ignore_errors: yes
+
+    - name: "Clean temporary work directory"
+      file:
+        path: "{{ ssp.backup_path if ssp is defined else '/tmp/ssp_work' }}"
+        state: "{{ item }}"
+      loop:
+        - absent
+        - directory
+      ignore_errors: yes
+
+    - name: "Remove stale lock files"
+      shell: |
+        find /usr/local/ipcs/temp -name "*.lock" -delete 2>/dev/null || true
+        find /tmp -maxdepth 1 -name "*.lock" -delete 2>/dev/null || true
+        echo "✅ Stale locks removed"
+      args:
+        executable: /bin/bash
+      changed_when: true
+      ignore_errors: yes
+
+    - name: "Log cleanup completion"
+      lineinfile:
+        path: "{{ ssp_pre_check_log }}"
+        line: "✅ Cleanup phase complete — {{ ansible_date_time.iso8601 }}"
+        insertafter: EOF
+
+  rescue:
+    - name: "⚠️  Cleanup warning (non-blocking)"
+      debug:
+        msg: "Cleanup encountered issues but continuing with validation..."
+
+  tags:
+    - pre_checks
+    - cleanup
+
+- name: "[PRE] System binary verification"
+  block:
+    - name: "Define required binaries"
+      set_fact:
+        required_binaries:
+          - name: dnf
+            path_var: dnf_path
+          - name: rpm
+            path_var: rpm_path
+          - name: curl
+            path_var: curl_path
+          - name: tar
+            path_var: tar_path
+          - name: md5sum
+            path_var: md5sum_path
+          - name: systemctl
+            path_var: systemctl_path
+
+    - name: "Check each required binary"
+      command: "which {{ item.name }}"
+      register: "{{ item.path_var }}"
+      loop: "{{ required_binaries }}"
+      changed_when: false
+      failed_when: false
+
+    - name: "Display available binaries"
+      debug:
+        msg: |
+          📦 System Binaries:
+          ├─ dnf      : {{ dnf_path.stdout | trim }}
+          ├─ rpm      : {{ rpm_path.stdout | trim }}
+          ├─ curl     : {{ curl_path.stdout | trim }}
+          ├─ tar      : {{ tar_path.stdout | trim }}
+          ├─ md5sum   : {{ md5sum_path.stdout | trim }}
+          └─ systemctl: {{ systemctl_path.stdout | trim }}
+
+    - name: "Validate all required binaries exist"
+      assert:
+        that:
+          - dnf_path.rc == 0
+          - rpm_path.rc == 0
+          - curl_path.rc == 0
+          - tar_path.rc == 0
+          - md5sum_path.rc == 0
+          - systemctl_path.rc == 0
+        fail_msg: |
+          ❌ One or more required system binaries are missing
+          Please install missing packages and retry
+
+  rescue:
+    - fail:
+        msg: "System binary verification failed"
+
+  tags:
+    - pre_checks
+    - system_binaries
+
+- name: "[PRE] Disk space validation"
+  block:
+    - name: "Check /opt disk space"
+      shell: |
+        AVAIL=$(df -BG /opt 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G')
+        if [ -z "$AVAIL" ] || [ "$AVAIL" -lt 0 ]; then
+          echo "0"
+        else
+          echo "$AVAIL"
+        fi
+      args:
+        executable: /bin/bash
+      register: opt_disk_available
+      changed_when: false
+
+    - name: "Check / (root) disk space"
+      shell: |
+        AVAIL=$(df -BG / 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G')
+        if [ -z "$AVAIL" ] || [ "$AVAIL" -lt 0 ]; then
+          echo "0"
+        else
+          echo "$AVAIL"
+        fi
+      args:
+        executable: /bin/bash
+      register: root_disk_available
+      changed_when: false
+
+    - name: "Define minimum disk requirements"
+      set_fact:
+        min_opt_disk_gb: "{{ ssp.backup_path is defined | ternary(15, 10) }}"
+        min_root_disk_gb: 5
+
+    - name: "Validate /opt disk space"
+      assert:
+        that:
+          - opt_disk_available.stdout | int >= min_opt_disk_gb | int
+        fail_msg: |
+          ❌ INSUFFICIENT DISK SPACE on /opt
+          Available : {{ opt_disk_available.stdout }}GB
+          Required  : {{ min_opt_disk_gb }}GB minimum
+          
+          Troubleshooting:
+          1. Check disk usage: df -h /opt
+          2. Find large files: du -sh /opt/* | sort -hr
+          3. Remove old backups: rm -rf /opt/ssp*.bak.*
+        success_msg: "✅ /opt disk OK: {{ opt_disk_available.stdout }}GB available (min: {{ min_opt_disk_gb }}GB)"
+
+    - name: "Validate / disk space"
+      assert:
+        that:
+          - root_disk_available.stdout | int >= min_root_disk_gb | int
+        fail_msg: |
+          ❌ INSUFFICIENT DISK SPACE on /
+          Available : {{ root_disk_available.stdout }}GB
+          Required  : {{ min_root_disk_gb }}GB minimum
+        success_msg: "✅ / disk OK: {{ root_disk_available.stdout }}GB available"
+
+    - name: "Display top disk consumers"
+      shell: |
+        echo "=== Top space consumers in /opt ==="
+        du -sh /opt/* 2>/dev/null | sort -hr | head -10 || echo "Cannot determine"
+      register: disk_consumers
+      changed_when: false
+      ignore_errors: yes
+
+    - debug:
+        var: disk_consumers.stdout_lines
+
+  rescue:
+    - fail:
+        msg: "Disk space validation failed — insufficient space for SSP installation"
+
+  tags:
+    - pre_checks
+    - disk_space
+
+- name: "[PRE] System process cleanup"
+  block:
+    - name: "Check for stuck patchSBC processes"
+      shell: |
+        pgrep -f patchSBC || echo "NONE"
+      args:
+        executable: /bin/bash
+      register: patchsbc_pids
+      changed_when: false
+
+    - name: "Kill stuck patchSBC processes"
+      shell: |
+        set -euo pipefail
+        PIDS="{{ patchsbc_pids.stdout }}"
+        
+        if [ "$PIDS" != "NONE" ] && [ -n "$PIDS" ]; then
+          echo "Found stuck patchSBC processes: $PIDS"
+          echo "$PIDS" | xargs kill -9 2>/dev/null || true
+          sleep 2
+          echo "✅ Stuck processes terminated"
+        else
+          echo "✅ No stuck processes found"
+        fi
+      args:
+        executable: /bin/bash
+      register: process_cleanup
+      changed_when: "'terminated' in process_cleanup.stdout"
+      ignore_errors: yes
+
+    - debug:
+        msg: "{{ process_cleanup.stdout }}"
+
+  tags:
+    - pre_checks
+    - process_cleanup
+
+- name: "[PRE] Repository accessibility"
+  block:
+    - name: "List enabled repositories"
+      shell: |
+        dnf repolist --enabled 2>/dev/null | head -20
+      register: repo_list
+      changed_when: false
+      ignore_errors: yes
+
+    - name: "Display enabled repos"
+      debug:
+        var: repo_list.stdout_lines
+
+    - name: "Test repository connectivity"
+      shell: |
+        set -euo pipefail
+        dnf repolist --enabled -q 2>&1 | grep -E "^[a-z]" | head -5
+      args:
+        executable: /bin/bash
+      register: repo_check
+      changed_when: false
+      ignore_errors: yes
+
+    - name: "Validate repositories accessible"
+      assert:
+        that:
+          - repo_check.rc == 0
+        fail_msg: |
+          ⚠️  Repository access check warning
+          Some repositories may be unavailable
+          Run: dnf repolist to diagnose
+        success_msg: "✅ Repository check passed"
+
+  tags:
+    - pre_checks
+    - repositories
+
+- name: "[PRE] IPCS service status"
+  block:
+    - name: "Check IPCS service status"
+      shell: |
+        systemctl is-enabled IPCS 2>/dev/null || echo "DISABLED"
+      args:
+        executable: /bin/bash
+      register: ipcs_enabled
+      changed_when: false
+
+    - name: "Get IPCS systemd service status"
+      systemd_facts:
+      ignore_errors: yes
+
+    - name: "Display IPCS status"
+      debug:
+        msg: "IPCS Service: {{ ipcs_enabled.stdout }}"
+
+  rescue:
+    - debug:
+        msg: "⚠️  IPCS status check skipped (may be normal)"
+
+  tags:
+    - pre_checks
+    - ipcs_status
+
+- name: "[PRE] Final validation summary"
+  block:
+    - name: "Write pre-check completion"
+      lineinfile:
+        path: "{{ ssp_pre_check_log }}"
+        line: |
+          
+          ============================================================
+          Phase 2: Validation Results
+          ============================================================
+          Disk /opt    : ✅ {{ opt_disk_available.stdout }}GB available
+          Disk /       : ✅ {{ root_disk_available.stdout }}GB available
+          Binaries     : ✅ All required binaries found
+          Processes    : ✅ Cleanup complete
+          Repositories : ✅ Accessible
+          
+          ============================================================
+          Completion: {{ ansible_date_time.iso8601 }}
+          ============================================================
+        insertafter: EOF
+
+    - name: "Display pre-check summary"
+      debug:
+        msg: |
+          ✅ ALL PRE-INSTALLATION CHECKS PASSED
+          
+          📊 System Status:
+          ├─ /opt disk      : {{ opt_disk_available.stdout }}GB
+          ├─ / disk         : {{ root_disk_available.stdout }}GB
+          ├─ Binaries       : ✅
+          ├─ Processes      : ✅ Cleaned
+          ├─ Repositories   : ✅
+          └─ Ready for SSP  : ✅
+          
+          Proceeding with installation...
+
+  rescue:
+    - fail:
+        msg: "Pre-installation checks did not complete successfully"
+
+  tags:
+    - pre_checks
+    - summary

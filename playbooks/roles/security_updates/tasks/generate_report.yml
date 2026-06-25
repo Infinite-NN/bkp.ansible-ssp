@@ -1,0 +1,201 @@
+---
+# =============================================================
+# Security Updates — Generate Security Report
+# Creates comprehensive report of downloaded security updates
+# =============================================================
+
+- name: "[REPORT] Initialize report generation"
+  block:
+    - name: "Log report generation start"
+      lineinfile:
+        path: "{{ log_dir }}/pipeline_{{ ansible_date_time.date }}.log"
+        line: "[SEC-REPORT][START] {{ ansible_date_time.iso8601 }}"
+        insertafter: EOF
+
+    - name: "Create report output directory"
+      file:
+        path: "{{ security_report_dir }}"
+        state: directory
+        mode: '0755'
+        recurse: yes
+
+    - name: "Display report configuration"
+      debug:
+        msg: |
+          📋 Security Report Configuration:
+          ├─ Format       : {{ report_format }}
+          ├─ Output Dir   : {{ security_report_dir }}
+          ├─ Include CVEs : {{ report_include_cve_details }}
+          └─ Include RHSA : {{ report_include_rhsa_information }}
+
+  tags:
+    - sec_report
+    - sec_report_init
+
+---
+
+- name: "[REPORT] Collect security update information"
+  block:
+    - name: "Query available security updates from DNF"
+      shell: |
+        dnf updateinfo list security 2>/dev/null | head -50
+      register: security_advisories
+      changed_when: false
+      failed_when: false
+
+    - name: "Extract unique CVEs"
+      shell: |
+        dnf updateinfo list cves 2>/dev/null | awk '{print $1}' | sort -u | head -20
+      register: unique_cves
+      changed_when: false
+      failed_when: false
+
+    - name: "Count security updates by severity"
+      shell: |
+        echo "Critical  : $(dnf updateinfo list security 2>/dev/null | grep -c Critical || echo 0)"
+        echo "Important : $(dnf updateinfo list security 2>/dev/null | grep -c Important || echo 0)"
+        echo "Moderate  : $(dnf updateinfo list security 2>/dev/null | grep -c Moderate || echo 0)"
+        echo "Low       : $(dnf updateinfo list security 2>/dev/null | grep -c Low || echo 0)"
+      args:
+        executable: /bin/bash
+      register: severity_counts
+      changed_when: false
+      failed_when: false
+
+    - name: "Display advisory information"
+      debug:
+        msg: |
+          🛡️  Security Advisory Summary:
+          {{ severity_counts.stdout }}
+
+  tags:
+    - sec_report
+    - sec_report_collect
+
+---
+
+- name: "[REPORT] Generate text report"
+  block:
+    - name: "Create security report"
+      copy:
+        content: |
+          ============================================================
+          AVAYA SBCE SECURITY UPDATE REPORT
+          ============================================================
+          Generated: {{ ansible_date_time.iso8601 }}
+          Host     : {{ inventory_hostname }}
+          
+          ============================================================
+          EXECUTIVE SUMMARY
+          ============================================================
+          
+          This report documents security updates available for the
+          Avaya SBCE Service Support Platform (SSP) as of
+          {{ ansible_date_time.date }}.
+          
+          ============================================================
+          SECURITY ADVISORIES
+          ============================================================
+          
+          {% if security_advisories.stdout %}
+          {{ security_advisories.stdout }}
+          {% else %}
+          No security advisories found.
+          {% endif %}
+          
+          ============================================================
+          CVE INFORMATION
+          ============================================================
+          
+          {% if unique_cves.stdout and report_include_cve_details | bool %}
+          Common Vulnerabilities and Exposures (CVEs):
+          {{ unique_cves.stdout }}
+          {% else %}
+          CVE information not available or not included.
+          {% endif %}
+          
+          ============================================================
+          SEVERITY BREAKDOWN
+          ============================================================
+          
+          {{ severity_counts.stdout }}
+          
+          ============================================================
+          RECOMMENDATIONS
+          ============================================================
+          
+          1. Review critical and important security updates immediately
+          2. Plan deployment of security patches to production
+          3. Test updates in staging environment first
+          4. Monitor systems after deployment for stability
+          5. Keep audit logs of all security updates applied
+          
+          ============================================================
+          DEPLOYMENT TRACKING
+          ============================================================
+          
+          Report Location : {{ security_report_dir }}/{{ security_report_filename }}
+          Build Number    : {{ ansible_date_time.epoch }}
+          Report Format   : {{ report_format }}
+          
+          ============================================================
+          End of Report
+          ============================================================
+        dest: "{{ security_report_dir }}/{{ security_report_filename }}"
+        mode: '0644'
+      when: generate_security_report | bool
+
+    - name: "Verify report was created"
+      stat:
+        path: "{{ security_report_dir }}/{{ security_report_filename }}"
+      register: report_stat
+
+    - name: "Display report location"
+      debug:
+        msg: |
+          ✅ Security report generated:
+          └─ {{ security_report_dir }}/{{ security_report_filename }}
+
+  rescue:
+    - debug:
+        msg: "⚠️  Report generation encountered issues (non-critical)"
+
+  tags:
+    - sec_report
+    - sec_report_generate
+
+---
+
+- name: "[REPORT] Report completion and cleanup"
+  block:
+    - name: "Clean up old security reports (optional)"
+      when: cleanup_old_reports | bool
+      shell: |
+        find "{{ security_report_dir }}" -name "security_update_report*" -mtime +{{ report_retention_days }} -delete 2>/dev/null || true
+        echo "✅ Old reports cleaned"
+      args:
+        executable: /bin/bash
+      changed_when: true
+      ignore_errors: yes
+
+    - name: "Log report completion"
+      lineinfile:
+        path: "{{ log_dir }}/pipeline_{{ ansible_date_time.date }}.log"
+        line: "[SEC-REPORT][COMPLETE] Report generated at {{ security_report_dir }}/{{ security_report_filename }}"
+        insertafter: EOF
+
+    - name: "Display final summary"
+      debug:
+        msg: |
+          ✅ SECURITY UPDATES ROLE COMPLETE
+          
+          📊 Deliverables:
+          ├─ Downloaded RPMs : {{ security_rpms_download_dir }}
+          ├─ Security Report : {{ security_report_dir }}/{{ security_report_filename }}
+          └─ Archive Location: {{ security_rpms_archive_dir }}
+          
+          ✨ Pipeline ready for next stages...
+
+  tags:
+    - sec_report
+    - sec_report_summary

@@ -1,0 +1,392 @@
+---
+# =============================================================
+# Post-Reboot — SSP Move/Extract Task
+# Moves or extracts SSP from work directory to install path
+# =============================================================
+
+- name: "[MOVE] SSP move and installation initialization"
+  block:
+    - name: "Log ssp_move phase start"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: "[MOVE][START] {{ ansible_date_time.iso8601 }}"
+        create: yes
+
+    - name: "Display ssp_move configuration"
+      debug:
+        msg: |
+          📦 SSP Move Configuration:
+          ├─ Work Dir    : {{ ssp_work_dir }}
+          ├─ Install Dir : {{ ssp_install_dir }}
+          ├─ Backup      : {{ backup_ssp_before_update | default(true) }}
+          └─ Timeout     : {{ post_reboot_timeout_ssp_move }}s
+
+  tags:
+    - move
+    - move_init
+
+---
+
+- name: "[MOVE] Discover SSP sources in work directory"
+  block:
+    - name: "Search for SSP directories (asbc_* pattern)"
+      find:
+        paths: "{{ ssp_work_dir }}"
+        patterns: "asbc_*"
+        file_type: directory
+        recurse: no
+      register: found_ssp_dirs
+
+    - name: "Search for TGZ files"
+      find:
+        paths: "{{ ssp_work_dir }}"
+        patterns: "*.tgz"
+        file_type: file
+        recurse: yes
+      register: found_tgz_files
+
+    - name: "Display discovered sources"
+      debug:
+        msg: |
+          🔍 Discovered SSP Sources:
+          ├─ Directories: {{ found_ssp_dirs.matched }}
+          │  {{ found_ssp_dirs.files | map(attribute='path') | list | join('\n  ') }}
+          ├─ TGZ Files  : {{ found_tgz_files.matched }}
+          │  {{ found_tgz_files.files | map(attribute='path') | list | join('\n  ') }}
+          └─ Total      : {{ found_ssp_dirs.matched + found_tgz_files.matched }}
+
+    - name: "Fail if no SSP sources found"
+      fail:
+        msg: |
+          ❌ No SSP sources found in {{ ssp_work_dir }}
+          Expected: asbc_* directories or *.tgz files
+      when: (found_ssp_dirs.matched | default(0) | int + found_tgz_files.matched | default(0) | int) == 0
+
+  rescue:
+    - fail:
+        msg: "SSP source discovery failed — {{ ansible_failed_result.msg }}"
+
+  tags:
+    - move
+    - move_discover
+
+---
+
+- name: "[MOVE] Prepare SSP installation directory"
+  block:
+    - name: "Check if install directory exists"
+      stat:
+        path: "{{ ssp_install_dir }}"
+      register: install_stat
+
+    - name: "Backup existing SSP if it's a directory"
+      shell: |
+        set -euo pipefail
+        
+        INSTALL_DIR="{{ ssp_install_dir }}"
+        
+        if [ -d "$INSTALL_DIR" ]; then
+          BACKUP_DIR="${INSTALL_DIR}.bak.$(date +%Y%m%d_%H%M%S)"
+          echo "Backing up existing SSP to $BACKUP_DIR"
+          mv "$INSTALL_DIR" "$BACKUP_DIR"
+          echo "✅ Backup created"
+        elif [ -f "$INSTALL_DIR" ]; then
+          echo "❌ Install path exists as file, not directory"
+          exit 1
+        else
+          echo "✅ Install directory not present (fresh install)"
+        fi
+      args:
+        executable: /bin/bash
+      when: backup_ssp_before_update | default(true) | bool
+      ignore_errors: yes
+
+    - name: "Create/verify install directory"
+      file:
+        path: "{{ ssp_install_dir }}"
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: "Verify install directory is writable"
+      shell: |
+        set -euo pipefail
+        
+        if [ ! -w "{{ ssp_install_dir }}" ]; then
+          echo "❌ Install directory not writable"
+          exit 1
+        fi
+        
+        # Test write access
+        TEST_FILE="{{ ssp_install_dir }}/.write_test_$$"
+        touch "$TEST_FILE" 2>/dev/null || exit 1
+        rm -f "$TEST_FILE"
+        
+        echo "✅ Install directory writable"
+      args:
+        executable: /bin/bash
+
+  rescue:
+    - fail:
+        msg: "Cannot prepare SSP install directory — {{ ansible_failed_result.msg }}"
+
+  tags:
+    - move
+    - move_prepare
+
+---
+
+- name: "[MOVE] Copy SSP directory to install location"
+  block:
+    - name: "Select source directory (most recent by modification time)"
+      set_fact:
+        ssp_src_dir: "{{ (found_ssp_dirs.files | sort(attribute='mtime', reverse=true) | first).path }}"
+      when: found_ssp_dirs.matched | default(0) | int > 0
+
+    - name: "Display selected source"
+      debug:
+        msg: |
+          📂 Using source:
+          ├─ Path: {{ ssp_src_dir | default('(TGZ extraction)') }}
+          └─ Size: {{ (found_ssp_dirs.files[0].size / 1048576) | round(2) | default('N/A') }}MB
+      when: ssp_src_dir is defined
+
+    - name: "Copy SSP directory using rsync"
+      shell: |
+        set -euo pipefail
+
+        SRC="{{ ssp_src_dir }}"
+        DST="{{ ssp_install_dir }}/{{ ssp_src_dir | basename }}"
+
+        echo "Copying SSP via rsync..."
+        
+        if command -v rsync >/dev/null 2>&1; then
+          rsync -aHAX --numeric-ids --delete "$SRC/" "$DST/"
+          echo "✅ rsync copy complete"
+        else
+          echo "rsync not available, using cp -a"
+          mkdir -p "$DST"
+          cp -a "$SRC/." "$DST/"
+          echo "✅ cp copy complete"
+        fi
+      args:
+        executable: /bin/bash
+      timeout: "{{ post_reboot_timeout_ssp_move }}"
+      when: ssp_src_dir is defined
+      register: copy_result
+
+    - name: "Verify SSP directory copy"
+      stat:
+        path: "{{ ssp_install_dir }}/{{ ssp_src_dir | basename }}"
+      register: copied_ssp_stat
+      when: ssp_src_dir is defined
+      failed_when: not copied_ssp_stat.stat.exists
+
+  rescue:
+    - name: "Log copy failure"
+      debug:
+        msg: "Directory copy failed — attempting TGZ extraction instead"
+      when: found_tgz_files.matched | default(0) | int > 0
+
+    - name: "Clear error and continue to TGZ extraction"
+      meta: clear_host_errors
+
+  tags:
+    - move
+    - move_copy
+
+---
+
+- name: "[MOVE] Extract TGZ file (if no directory copy)"
+  block:
+    - name: "Select TGZ file (largest by size = likely complete)"
+      set_fact:
+        ssp_src_tgz: "{{ (found_tgz_files.files | sort(attribute='size', reverse=true) | first).path }}"
+      when: 
+        - ssp_src_dir is not defined
+        - found_tgz_files.matched | default(0) | int > 0
+
+    - name: "Display selected TGZ"
+      debug:
+        msg: |
+          📦 Extracting TGZ:
+          ├─ File: {{ ssp_src_tgz | basename }}
+          ├─ Size: {{ (found_tgz_files.files[0].size / 1048576) | round(2) }}MB
+          └─ Path: {{ ssp_src_tgz }}
+
+    - name: "Extract TGZ to install directory"
+      unarchive:
+        src: "{{ ssp_src_tgz }}"
+        dest: "{{ ssp_install_dir }}"
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+      timeout: "{{ post_reboot_timeout_extract }}"
+      when: ssp_src_tgz is defined
+
+    - name: "Verify TGZ extraction created SSP structure"
+      find:
+        paths: "{{ ssp_install_dir }}"
+        patterns: "asbc_*"
+        file_type: directory
+        maxdepth: 1
+      register: extracted_ssp_dirs
+
+    - name: "Fail if extraction didn't produce SSP directory"
+      fail:
+        msg: "TGZ extraction did not produce expected SSP structure"
+      when: extracted_ssp_dirs.matched == 0
+
+  rescue:
+    - fail:
+        msg: "Both copy and TGZ extraction failed — {{ ansible_failed_result.msg }}"
+
+  tags:
+    - move
+    - move_extract
+
+---
+
+- name: "[MOVE] Discover final SSP installation path"
+  block:
+    - name: "Find asbc_* directory under install path"
+      find:
+        paths: "{{ ssp_install_dir }}"
+        patterns: "asbc_*"
+        file_type: directory
+        maxdepth: 2
+      register: final_ssp_search
+
+    - name: "Select discovered SSP directory"
+      set_fact:
+        ssp_path: "{{ (final_ssp_search.files | sort(attribute='mtime', reverse=true) | first).path }}"
+
+    - name: "Validate ssp_path"
+      stat:
+        path: "{{ ssp_path }}"
+      register: ssp_path_stat
+      failed_when: not ssp_path_stat.stat.isdir
+
+    - name: "Display discovered ssp_path"
+      debug:
+        msg: |
+          ✅ SSP Installation Path:
+          ├─ Path: {{ ssp_path }}
+          ├─ Size: {{ (ssp_path_stat.stat.size / 1048576) | round(2) }}MB
+          └─ Files: {{ ssp_path_stat.stat.nlink }}
+
+  rescue:
+    - fail:
+        msg: "Cannot locate SSP directory after copy/extract — {{ ansible_failed_result.msg }}"
+
+  tags:
+    - move
+    - move_discover_final
+
+---
+
+- name: "[MOVE] Extract nested TGZ files inside SSP"
+  block:
+    - name: "Find TGZ files within SSP structure"
+      find:
+        paths: "{{ ssp_path }}"
+        patterns: "*.tgz"
+        file_type: file
+        recurse: yes
+      register: nested_tgz_files
+
+    - name: "Display nested TGZ files"
+      debug:
+        msg: |
+          📦 Nested TGZ Files Found: {{ nested_tgz_files.matched }}
+          {% for file in nested_tgz_files.files[:5] %}
+          - {{ file.path | basename }}
+          {% endfor %}
+
+    - name: "Extract each nested TGZ"
+      unarchive:
+        src: "{{ item.path }}"
+        dest: "{{ item.path | dirname }}"
+        remote_src: yes
+      loop: "{{ nested_tgz_files.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+      when: nested_tgz_files.matched > 0
+      timeout: "{{ post_reboot_timeout_extract }}"
+
+  rescue:
+    - name: "⚠️  Nested TGZ extraction warning"
+      debug:
+        msg: "Nested TGZ extraction encountered issues (non-critical)"
+
+  tags:
+    - move
+    - move_nested_extract
+
+---
+
+- name: "[MOVE] Final verification and logging"
+  block:
+    - name: "Verify SSP structure is valid"
+      stat:
+        path: "{{ ssp_path }}/InstallRPMsList"
+      register: install_rpms_list_stat
+      failed_when: not install_rpms_list_stat.exists
+
+    - name: "Count files in SSP"
+      shell: |
+        find "{{ ssp_path }}" -type f | wc -l
+      args:
+        executable: /bin/bash
+      register: ssp_file_count
+      changed_when: false
+
+    - name: "Log move completion"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: |
+          [MOVE][SUCCESS] {{ ansible_date_time.iso8601 }}
+          SSP Path : {{ ssp_path }}
+          Files    : {{ ssp_file_count.stdout | trim }}
+          Status   : Ready for post-reboot updates
+        create: yes
+
+    - name: "Display move completion summary"
+      debug:
+        msg: |
+          ✅ SSP MOVE/EXTRACT COMPLETE
+          
+          📁 Installation Summary:
+          ├─ SSP Path     : {{ ssp_path }}
+          ├─ Files        : {{ ssp_file_count.stdout | trim }}
+          ├─ Status       : Valid and ready
+          └─ Next Phase   : Download security RPMs
+          
+          Proceeding to RPM updates...
+
+  rescue:
+    - fail:
+        msg: "SSP structure validation failed — {{ ansible_failed_result.msg }}"
+
+  tags:
+    - move
+    - move_verify
+
+---
+
+- name: "[MOVE] Cleanup source directories (optional)"
+  block:
+    - name: "Clean source ssp_work_dir if configured"
+      file:
+        path: "{{ ssp_work_dir }}"
+        state: absent
+      when: cleanup_work_dirs | default(true) | bool
+      ignore_errors: yes
+
+  rescue:
+    - debug:
+        msg: "⚠️  Could not cleanup work directories (non-critical)"
+
+  tags:
+    - move
+    - move_cleanup

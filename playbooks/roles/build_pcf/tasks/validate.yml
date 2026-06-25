@@ -1,0 +1,167 @@
+---
+# =============================================================
+# Build PCF — Validation Task
+# Validates all required variables and paths before build
+# =============================================================
+
+- name: "[VALIDATE] Variable validation block"
+  block:
+    - name: "Verify all required variables are defined"
+      assert:
+        that:
+          - build_pcf_branch is defined and build_pcf_branch | length > 0
+          - build_pcf_build_no is defined and build_pcf_build_no | length > 0
+          - build_pcf_module_ver is defined and build_pcf_module_ver | length > 0
+          - build_pcf_src_root is defined
+          - build_pcf_build_root is defined
+          - build_pcf_releases_dir is defined
+        fail_msg: |
+          ❌ VALIDATION FAILED: Missing required build variables
+          build_pcf_branch    : {{ build_pcf_branch | default('UNDEFINED') }}
+          build_pcf_build_no  : {{ build_pcf_build_no | default('UNDEFINED') }}
+          build_pcf_module_ver: {{ build_pcf_module_ver | default('UNDEFINED') }}
+          build_pcf_src_root  : {{ build_pcf_src_root | default('UNDEFINED') }}
+          build_pcf_build_root: {{ build_pcf_build_root | default('UNDEFINED') }}
+          build_pcf_releases_dir: {{ build_pcf_releases_dir | default('UNDEFINED') }}
+        success_msg: "✅ All required variables defined"
+
+    - name: "Validate branch format"
+      assert:
+        that:
+          - build_pcf_branch is regex('^10\.2\.1\.[0-9]+_orion_int$')
+        fail_msg: |
+          ❌ VALIDATION FAILED: Invalid branch format
+          Expected format: 10.2.1.x_orion_int
+          Got: {{ build_pcf_branch }}
+        success_msg: "✅ Branch format valid: {{ build_pcf_branch }}"
+
+    - name: "Validate build number format"
+      assert:
+        that:
+          - build_pcf_build_no is regex('^[0-9]+$')
+        fail_msg: |
+          ❌ VALIDATION FAILED: Invalid build number
+          Expected: numeric only
+          Got: {{ build_pcf_build_no }}
+        success_msg: "✅ Build number valid: {{ build_pcf_build_no }}"
+
+    - name: "Validate module version format"
+      assert:
+        that:
+          - build_pcf_module_ver is regex('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+        fail_msg: |
+          ❌ VALIDATION FAILED: Invalid module version format
+          Expected: x.x.x.xxxxxx
+          Got: {{ build_pcf_module_ver }}
+        success_msg: "✅ Module version format valid: {{ build_pcf_module_ver }}"
+
+  rescue:
+    - name: "Log validation failure"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[VALIDATE][FAILED] {{ ansible_failed_result.msg | default('Unknown error') }} — {{ ansible_date_time.iso8601 }}"
+        insertafter: EOF
+      ignore_errors: yes
+
+    - name: "Re-raise validation error"
+      fail:
+        msg: "{{ ansible_failed_result.msg }}"
+
+  tags:
+    - validate
+
+- name: "[VALIDATE] Derive build paths"
+  block:
+    - name: "Extract version from branch"
+      set_fact:
+        build_pcf_version: "{{ build_pcf_branch | regex_replace('_orion_int$', '') }}"
+
+    - name: "Set derived directory paths"
+      set_fact:
+        build_pcf_svn_repo: "{{ lookup('env', 'SVN_REPOS_LOCAL') | default('/var/lib/jenkins/SVN_repos') }}/{{ build_pcf_branch }}"
+        build_pcf_build_dir: "{{ build_pcf_build_root }}/{{ build_pcf_branch }}"
+        build_pcf_release_dir: "{{ build_pcf_releases_dir }}/{{ build_pcf_branch }}"
+
+    - name: "Display derived paths"
+      debug:
+        msg: |
+          📁 Derived Build Paths:
+          ├─ Version       : {{ build_pcf_version }}
+          ├─ SVN Repo      : {{ build_pcf_svn_repo }}
+          ├─ Build Dir     : {{ build_pcf_build_dir }}
+          └─ Release Dir   : {{ build_pcf_release_dir }}
+
+  tags:
+    - validate
+
+- name: "[VALIDATE] Verify prerequisites"
+  block:
+    - name: "Verify SVN repository exists"
+      stat:
+        path: "{{ build_pcf_svn_repo }}"
+      register: svn_repo_stat
+
+    - name: "Fail if SVN repo missing"
+      fail:
+        msg: |
+          ❌ SVN Repository not found at: {{ build_pcf_svn_repo }}
+          
+          Possible causes:
+          - SVN repository not synced from buildserver
+          - Incorrect branch name: {{ build_pcf_branch }}
+          - SVN sync failed during workspace preparation
+          
+          Troubleshooting:
+          - Check SVN repos path: ls -la {{ build_pcf_svn_repo | dirname }}
+          - Verify branch exists: ls -la {{ build_pcf_svn_repo }}
+      when: not svn_repo_stat.exists
+
+    - name: "Check available disk space for build"
+      shell: |
+        set -euo pipefail
+        AVAIL=$(df -BG "{{ build_pcf_build_root | dirname }}" | awk 'NR==2 {print $4}' | sed 's/G//')
+        if [ -z "$AVAIL" ]; then
+          echo "0"
+        else
+          echo "$AVAIL"
+        fi
+      args:
+        executable: /bin/bash
+      register: build_disk_avail
+      changed_when: false
+
+    - name: "Validate disk space (minimum 5GB required)"
+      assert:
+        that:
+          - build_disk_avail.stdout | int >= 5
+        fail_msg: |
+          ❌ INSUFFICIENT DISK SPACE for PCF build
+          Available : {{ build_disk_avail.stdout }}GB
+          Required  : 5GB minimum
+          Build Dir : {{ build_pcf_build_root }}
+        success_msg: "✅ Disk space OK: {{ build_disk_avail.stdout }}GB available"
+
+    - name: "Log validation complete"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: |
+          [VALIDATE][COMPLETE] {{ ansible_date_time.iso8601 }}
+          Version={{ build_pcf_version }} Branch={{ build_pcf_branch }} Build={{ build_pcf_build_no }}
+          SVN={{ build_pcf_svn_repo }} BuildDir={{ build_pcf_build_dir }} Disk={{ build_disk_avail.stdout }}GB
+        insertafter: "Build Tasks:"
+
+  rescue:
+    - name: "Log prerequisite check failure"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[VALIDATE][PREREQ_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }}"
+        insertafter: EOF
+      ignore_errors: yes
+
+    - name: "Fail with context"
+      fail:
+        msg: "{{ ansible_failed_result.msg }}"
+
+  tags:
+    - validate
+    - prerequisites

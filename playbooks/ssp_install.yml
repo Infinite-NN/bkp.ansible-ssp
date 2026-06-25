@@ -1,0 +1,244 @@
+---
+# =============================================================
+# SSP Installation Complete Pipeline
+# Play 1: SSP Install Phase (install + reboot)
+# Play 2: Post-Reboot Phase (validation + updates)
+# =============================================================
+
+- name: "Phase 1: SSP Installation & Reboot"
+  hosts: sbc
+  become: yes
+  gather_facts: yes
+  max_fail_percentage: 0  # Fail if ANY host fails
+  force_handlers: yes
+
+  vars:
+    # SSP Configuration
+    ssp_version: "{{ ssp_ver | default('latest') }}"
+    ssp_download_url: "{{ artifact_server.base_url }}/{{ artifact_server.ssp_path }}"
+    ssp_install_path: "/opt/ssp"
+    ssp_backup_path: "/opt/ssp_backup_{{ ansible_date_time.iso8601_basic_short }}"
+    
+    # Environment
+    environment_name: "{{ environment | default('production') }}"
+    deployment_timestamp: "{{ ansible_date_time.iso8601 }}"
+
+  pre_tasks:
+    - name: "🔍 Pre-Installation Validation"
+      block:
+        - name: "Check available disk space"
+          shell: df -BG / | awk 'NR==2 {print $4}' | sed 's/G//'
+          register: disk_space
+          failed_when: disk_space.stdout | int < 10
+          changed_when: false
+
+        - name: "Verify network connectivity to artifact server"
+          uri:
+            url: "{{ ssp_download_url }}"
+            method: HEAD
+            status_code: 200,301,302
+            timeout: 10
+          register: artifact_server_check
+          retries: 3
+          delay: 5
+
+        - name: "Display pre-installation summary"
+          debug:
+            msg: |
+              ╔════════════════════════════════════╗
+              ║   SSP INSTALLATION PHASE           ║
+              ╠════════════════════════════════════╣
+              ║ Host             : {{ inventory_hostname }}
+              ║ Environment      : {{ environment_name }}
+              ║ SSP Version      : {{ ssp_version }}
+              ║ Download URL     : {{ ssp_download_url }}
+              ║ Install Path     : {{ ssp_install_path }}
+              ║ Disk Space (GB)  : {{ disk_space.stdout }}
+              ║ Timestamp        : {{ deployment_timestamp }}
+              ║ Artifact Server  : {{ artifact_server_check.status }}
+              ╚════════════════════════════════════╝
+
+      rescue:
+        - name: "❌ Pre-installation validation failed"
+          fail:
+            msg: "Pre-installation checks failed. Review errors above."
+
+    - name: "📋 Create pre-installation backup marker"
+      copy:
+        content: |
+          Pre-Installation Backup
+          Timestamp: {{ deployment_timestamp }}
+          Host: {{ inventory_hostname }}
+          SSP Version: {{ ssp_version }}
+        dest: "/var/log/ssp_install_marker_{{ ansible_date_time.iso8601_basic_short }}.txt"
+        mode: '0644'
+
+  roles:
+    - role: ssp_install
+      vars:
+        ssp_install_version: "{{ ssp_version }}"
+        ssp_install_url: "{{ ssp_download_url }}"
+        ssp_install_destination: "{{ ssp_install_path }}"
+        ssp_install_environment: "{{ environment_name }}"
+        ssp_install_timestamp: "{{ deployment_timestamp }}"
+
+  post_tasks:
+    - name: "✅ Pre-Reboot Validation"
+      block:
+        - name: "Verify SSP installation"
+          stat:
+            path: "{{ ssp_install_path }}"
+          register: ssp_install_stat
+          failed_when: not ssp_install_stat.exists
+
+        - name: "Create reboot marker file"
+          copy:
+            content: |
+              SSP_INSTALLED=yes
+              INSTALL_TIMESTAMP={{ deployment_timestamp }}
+              INSTALL_VERSION={{ ssp_version }}
+              PENDING_REBOOT=yes
+            dest: "/etc/ssp_install.conf"
+            mode: '0644'
+
+        - name: "⏸️  Wait for services to settle before reboot"
+          pause:
+            seconds: 30
+
+        - name: "🔄 Reboot system (will reconnect)"
+          reboot:
+            msg: "SSP installation complete — rebooting for activation"
+            pre_reboot_delay: 60
+            post_reboot_delay: 30
+            reboot_timeout: 600
+            search_paths: ['/sbin', '/usr/sbin', '/usr/local/sbin']
+          async: 1
+          poll: 0
+          register: reboot_job
+
+        - name: "⏳ Allow system time to reboot"
+          pause:
+            seconds: 120
+
+      rescue:
+        - name: "⚠️  Reboot handling"
+          debug:
+            msg: "System reboot may still be in progress. Continuing..."
+
+---
+
+- name: "Phase 2: Post-Reboot Validation & Updates"
+  hosts: sbc
+  become: yes
+  gather_facts: yes
+  max_fail_percentage: 10  # Allow 10% host failure in this phase
+  force_handlers: yes
+
+  vars:
+    # Post-reboot configuration
+    post_reboot_timeout: 1800  # 30 minutes
+    environment_name: "{{ environment | default('production') }}"
+    update_security_packages: "{{ skip_security_updates | default(false) | bool | ternary(false, true) }}"
+    update_pcf: "{{ skip_pcf_update | default(false) | bool | ternary(false, true) }}"
+
+  pre_tasks:
+    - name: "🔍 Post-Reboot Validation"
+      block:
+        - name: "Wait for system to be fully responsive"
+          wait_for_connection:
+            delay: 30
+            timeout: 300
+
+        - name: "Verify system is up"
+          ping:
+
+        - name: "Check SSP installation confirmation"
+          stat:
+            path: "/opt/ssp"
+          register: ssp_path_stat
+          failed_when: not ssp_path_stat.exists
+
+        - name: "Display post-reboot summary"
+          debug:
+            msg: |
+              ╔════════════════════════════════════╗
+              ║   POST-REBOOT PHASE                ║
+              ╠════════════════════════════════════╣
+              ║ Host                : {{ inventory_hostname }}
+              ║ Environment         : {{ environment_name }}
+              ║ Update Security Pkg : {{ update_security_packages }}
+              ║ Update PCF          : {{ update_pcf }}
+              ║ Boot Time           : {{ ansible_uptime_seconds | int }} seconds
+              ║ Load Average        : {{ ansible_load.1 }}
+              ╚════════════════════════════════════╝
+
+      rescue:
+        - name: "❌ Post-reboot validation failed"
+          fail:
+            msg: "System did not come up properly after reboot"
+
+  roles:
+    - role: post_reboot
+      vars:
+        post_reboot_environment: "{{ environment_name }}"
+        post_reboot_run_security_updates: "{{ update_security_packages }}"
+        post_reboot_run_pcf_update: "{{ update_pcf }}"
+        post_reboot_timeout_seconds: "{{ post_reboot_timeout }}"
+
+  post_tasks:
+    - name: "✅ Post-Reboot Summary"
+      block:
+        - name: "Collect system information"
+          shell: |
+            echo "=== System Status ==="
+            uptime
+            echo ""
+            echo "=== SSP Version ==="
+            /opt/ssp/bin/version.sh 2>/dev/null || echo "SSP tools not available"
+            echo ""
+            echo "=== Disk Usage ==="
+            df -h /
+          register: system_info
+          changed_when: false
+          failed_when: false
+
+        - name: "Display system information"
+          debug:
+            msg: "{{ system_info.stdout }}"
+
+        - name: "Generate post-reboot report"
+          copy:
+            content: |
+              Post-Reboot Installation Report
+              =================================
+              Timestamp: {{ ansible_date_time.iso8601 }}
+              Host: {{ inventory_hostname }}
+              Environment: {{ environment_name }}
+              
+              System Information:
+              {{ system_info.stdout }}
+              
+              Status: ✅ INSTALLATION COMPLETE
+            dest: "/var/log/ssp_post_reboot_{{ ansible_date_time.iso8601_basic_short }}.log"
+            mode: '0644'
+
+      rescue:
+        - name: "⚠️  Post-reboot summary generation warning"
+          debug:
+            msg: "Could not generate full post-reboot summary (non-critical)"
+
+  handlers:
+    - name: "restart ssp"
+      systemd:
+        name: ssp
+        state: restarted
+      listen: "restart ssp"
+
+    - name: "restart network"
+      systemd:
+        name: network
+        state: restarted
+      listen: "restart network"
+
+  tags:
+    - always

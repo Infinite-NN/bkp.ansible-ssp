@@ -1,0 +1,285 @@
+---
+# =============================================================
+# SSP Install — Installation Task
+# Executes patchSBC and reboots system
+# =============================================================
+
+- name: "[INSTALL] Initialize installation phase"
+  block:
+    - name: "Capture system state before installation"
+      shell: |
+        cat /proc/sys/kernel/random/boot_id
+      register: boot_id_before
+      changed_when: false
+
+    - name: "Log installation start"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: |
+          [INSTALL][START] {{ ansible_date_time.iso8601 }}
+          patchSBC  : {{ patchsbc_script }}
+          TGZ File  : {{ tgz_path }}
+          Boot ID   : {{ boot_id_before.stdout | trim }}
+        create: yes
+
+    - name: "Display installation configuration"
+      debug:
+        msg: |
+          ⚙️  SSP Installation Configuration:
+          ├─ patchSBC Script: {{ patchsbc_script }}
+          ├─ TGZ Package    : {{ tgz_path | basename }}
+          ├─ Python Env     : {{ patchsbc_venv_python }}
+          ├─ Timeout        : {{ timeout_patchsbc }}s
+          └─ Silent Mode    : {{ patchsbc_silent_flag }}
+
+  tags:
+    - install
+    - install_init
+
+---
+
+- name: "[INSTALL] Pre-installation validation"
+  block:
+    - name: "Verify patchSBC script is accessible"
+      stat:
+        path: "{{ patchsbc_script }}"
+      register: patchsbc_check
+      failed_when: not patchsbc_check.stat.exists
+
+    - name: "Verify TGZ file is accessible"
+      stat:
+        path: "{{ tgz_path }}"
+      register: tgz_check
+      failed_when: not tgz_check.stat.exists
+
+    - name: "Verify Python virtual environment exists"
+      stat:
+        path: "{{ patchsbc_venv_python }}"
+      register: venv_check
+      failed_when: not venv_check.stat.exists
+
+    - name: "Display pre-install validation results"
+      debug:
+        msg: |
+          ✅ Pre-Installation Checks:
+          ├─ patchSBC script : OK
+          ├─ TGZ package     : OK  
+          └─ Python venv     : OK
+
+  rescue:
+    - fail:
+        msg: |
+          ❌ Pre-installation validation failed
+          patchSBC exists: {{ patchsbc_check.stat.exists | default(false) }}
+          TGZ exists     : {{ tgz_check.stat.exists | default(false) }}
+          Python venv    : {{ venv_check.stat.exists | default(false) }}
+
+  tags:
+    - install
+    - install_validate
+
+---
+
+- name: "[INSTALL] Execute patchSBC installer"
+  block:
+    - name: "Run patchSBC in async mode"
+      shell: |
+        set -o pipefail
+        
+        echo "Starting patchSBC installation..."
+        echo "Time: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        echo ""
+        
+        # Run patchSBC with proper error handling
+        "{{ patchsbc_venv_python }}" \
+          "{{ patchsbc_script }}" \
+          -i "{{ tgz_path }}" \
+          {{ patchsbc_silent_flag }} \
+          2>&1
+        
+        echo ""
+        echo "patchSBC completed with rc=$?"
+      args:
+        executable: /bin/bash
+      register: patchsbc_result
+      async: "{{ timeout_patchsbc }}"
+      poll: "{{ patchsbc_poll_interval }}"
+      timeout: "{{ timeout_patchsbc + 300 }}"
+      failed_when: false
+
+    - name: "Display patchSBC output (last 50 lines)"
+      debug:
+        msg: |
+          patchSBC Output:
+          {{ patchsbc_result.stdout_lines[-50:] | default(['(no output)']) | join('\n') }}
+
+    - name: "Log patchSBC output"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: |
+          [INSTALL][PATCHSBC_RC] {{ patchsbc_result.rc | default('UNKNOWN') }}
+          [INSTALL][PATCHSBC_END] {{ ansible_date_time.iso8601 }}
+        create: yes
+
+  rescue:
+    - name: "Log patchSBC execution error"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: |
+          [INSTALL][PATCHSBC_ERROR] {{ ansible_failed_result.msg | default('Unknown error') }}
+          RC: {{ patchsbc_result.rc | default('UNKNOWN') }}
+        create: yes
+      ignore_errors: yes
+
+    - fail:
+        msg: |
+          ❌ patchSBC execution failed
+          RC: {{ patchsbc_result.rc | default('UNKNOWN') }}
+          Error: {{ ansible_failed_result.msg }}
+
+  tags:
+    - install
+    - install_patchsbc
+
+---
+
+- name: "[INSTALL] Monitor patch installation progress"
+  block:
+    - name: "Wait for installation completion (monitor patch.log)"
+      shell: |
+        set -euo pipefail
+        
+        LOG="{{ patch_log }}"
+        
+        # Check for success markers
+        for marker in {{ patchsbc_success_markers | map(quote) | join(' ') }}; do
+          if grep -q "$marker" "$LOG" 2>/dev/null; then
+            echo "INSTALL_SUCCESS"
+            exit 0
+          fi
+        done
+        
+        # Check for failure markers
+        for marker in {{ patchsbc_failure_markers | map(quote) | join(' ') }}; do
+          if grep -q "$marker" "$LOG" 2>/dev/null; then
+            echo "INSTALL_FAILED: $(grep "$marker" "$LOG" | tail -1)"
+            exit 1
+          fi
+        done
+        
+        echo "INSTALL_PENDING"
+        exit 0
+      args:
+        executable: /bin/bash
+      register: install_status
+      retries: "{{ retry_count_patchsbc_poll }}"
+      delay: "{{ retry_delay_base }}"
+      until: "'INSTALL_SUCCESS' in install_status.stdout or 'INSTALL_FAILED' in install_status.stdout"
+      changed_when: false
+
+    - name: "Check installation result"
+      fail:
+        msg: "{{ install_status.stdout | regex_replace('INSTALL_FAILED: ', '') }}"
+      when: "'INSTALL_FAILED' in install_status.stdout"
+
+    - name: "Confirm installation success"
+      debug:
+        msg: "✅ SSP installation completed successfully — System reboot pending"
+
+  rescue:
+    - name: "Collect patch.log for diagnosis"
+      shell: |
+        echo "=== Last 100 lines of patch.log ==="
+        tail -100 "{{ patch_log }}" 2>/dev/null || echo "Log not available"
+      register: patch_log_excerpt
+      ignore_errors: yes
+
+    - name: "Log failure details"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: |
+          [INSTALL][MONITOR_FAILED] Installation monitoring failed
+          {{ patch_log_excerpt.stdout | default('No log excerpt') }}
+        create: yes
+      ignore_errors: yes
+
+    - fail:
+        msg: |
+          ❌ Installation monitoring failed
+          {{ patch_log_excerpt.stdout | default('Unknown error') }}
+
+  tags:
+    - install
+    - install_monitor
+
+---
+
+- name: "[INSTALL] Reboot system for SSP activation"
+  block:
+    - name: "Initiate system reboot"
+      reboot:
+        reboot_timeout: "{{ timeout_reboot }}"
+        connect_timeout: "{{ timeout_reboot_connect }}"
+        post_reboot_delay: "{{ timeout_post_reboot_delay }}"
+        test_command: "{{ reboot_test_command }}"
+        msg: "{{ reboot_message }}"
+      register: reboot_result
+
+    - name: "Capture boot ID after reboot"
+      command: cat /proc/sys/kernel/random/boot_id
+      register: boot_id_after
+      changed_when: false
+
+    - name: "Verify system rebooted (boot ID changed)"
+      assert:
+        that:
+          - boot_id_before.stdout | trim != boot_id_after.stdout | trim
+        fail_msg: |
+          ❌ Boot ID unchanged — reboot may not have occurred
+          Before: {{ boot_id_before.stdout | trim }}
+          After : {{ boot_id_after.stdout | trim }}
+        success_msg: |
+          ✅ System reboot verified
+          Before: {{ boot_id_before.stdout | trim }}
+          After : {{ boot_id_after.stdout | trim }}
+
+    - name: "Log reboot completion"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: |
+          [REBOOT][SUCCESS] {{ ansible_date_time.iso8601 }}
+          Boot ID Before: {{ boot_id_before.stdout | trim }}
+          Boot ID After : {{ boot_id_after.stdout | trim }}
+        create: yes
+
+  rescue:
+    - name: "Log reboot failure"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: "[REBOOT][FAILED] {{ ansible_failed_result.msg | default('Unknown') }}"
+        create: yes
+      ignore_errors: yes
+
+    - fail:
+        msg: "System reboot failed or system not responsive — {{ ansible_failed_result.msg }}"
+
+  tags:
+    - install
+    - install_reboot
+
+---
+
+- name: "[INSTALL] Post-reboot GUI verification"
+  block:
+    - name: "Wait for IPCS GUI service to start"
+      shell: |
+        set -euo pipefail
+        
+        SCRIPT="{{ ipcs_script }}"
+        PATTERN="{{ gui_check_pattern }}"
+        
+        if [ ! -x "$SCRIPT" ]; then
+          echo "⚠️  IPCS script not executable, status may fail gracefully"
+        fi
+        
+        # Get current status
