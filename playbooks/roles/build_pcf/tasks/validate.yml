@@ -1,32 +1,33 @@
 ---
 # =============================================================
-# Build PCF — Validation Task
-# Validates all required variables and paths before build
+# Build PCF — Validation Task (FIXED - Logging Issues)
 # =============================================================
 
 - name: "[VALIDATE] Initialize build log file"
   block:
     - name: "Create log directory"
       file:
-        path: "{{ build_pcf_log | dirname }}"
+        path: "/var/log"
         state: directory
         mode: '0755'
 
-    - name: "Create and initialize log file"
-      copy:
-        content: |
-          ============================================================
-          PCF BUILD LOG
-          ============================================================
-          Build Start Date  : {{ ansible_date_time.iso8601 }}
-          Branch            : {{ build_pcf_branch }}
-          Build Number      : {{ build_pcf_build_no }}
-          Module Version    : {{ build_pcf_module_ver }}
-          Host              : {{ inventory_hostname }}
-          
-          Build Tasks:
-        dest: "{{ build_pcf_log }}"
-        mode: '0644'
+    - name: "Initialize log file with header"
+      shell: |
+        cat > "{{ build_pcf_log }}" <<'EOF'
+============================================================
+PCF BUILD LOG
+============================================================
+Build Start Date  : {{ ansible_date_time.iso8601 }}
+Branch            : {{ build_pcf_branch }}
+Build Number      : {{ build_pcf_build_no }}
+Module Version    : {{ build_pcf_module_ver }}
+Host              : {{ inventory_hostname }}
+
+Build Tasks:
+EOF
+      args:
+        executable: /bin/bash
+      changed_when: false
 
     - name: "Verify log file created"
       stat:
@@ -94,25 +95,19 @@
           - build_pcf_module_ver is regex('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
         fail_msg: |
           ❌ VALIDATION FAILED: Invalid module version format
-          Expected: x.x.x.x (4 numeric parts)
+          Expected: x.x.x.xxxxxx
           Got: {{ build_pcf_module_ver }}
         success_msg: "✅ Module version format valid: {{ build_pcf_module_ver }}"
 
     - name: "Log validation passed"
-      lineinfile:
-        path: "{{ build_pcf_log }}"
-        line: "[VALIDATE][PASSED] All variable validations successful — {{ ansible_date_time.iso8601 }}"
-        insertafter: "Build Tasks:"
-        create: yes
+      shell: |
+        echo "[VALIDATE][PASSED] All variable validations successful — {{ ansible_date_time.iso8601 }}" >> "{{ build_pcf_log }}"
       ignore_errors: yes
 
   rescue:
     - name: "Log validation failure"
-      lineinfile:
-        path: "{{ build_pcf_log }}"
-        line: "[VALIDATE][FAILED] {{ ansible_failed_result.msg | default('Unknown error') }} — {{ ansible_date_time.iso8601 }}"
-        insertafter: "Build Tasks:"
-        create: yes
+      shell: |
+        echo "[VALIDATE][FAILED] {{ ansible_failed_result.msg | default('Unknown error') }} — {{ ansible_date_time.iso8601 }}" >> "{{ build_pcf_log }}" 2>/dev/null || true
       ignore_errors: yes
 
     - name: "Re-raise validation error"
@@ -144,11 +139,8 @@
           └─ Release Dir   : {{ build_pcf_release_dir }}
 
     - name: "Log derived paths"
-      lineinfile:
-        path: "{{ build_pcf_log }}"
-        line: "[VALIDATE][PATHS] Version={{ build_pcf_version }} SVN={{ build_pcf_svn_repo }} BuildDir={{ build_pcf_build_dir }}"
-        insertafter: EOF
-        create: yes
+      shell: |
+        echo "[VALIDATE][PATHS] Version={{ build_pcf_version }} SVN={{ build_pcf_svn_repo }} BuildDir={{ build_pcf_build_dir }}" >> "{{ build_pcf_log }}"
       ignore_errors: yes
 
   tags:
@@ -202,39 +194,24 @@
         success_msg: "✅ Disk space OK: {{ build_disk_avail.stdout }}GB available"
 
     - name: "Log validation complete"
-      lineinfile:
-        path: "{{ build_pcf_log }}"
-        line: |
-          [VALIDATE][COMPLETE] {{ ansible_date_time.iso8601 }}
-          Version={{ build_pcf_version }} Branch={{ build_pcf_branch }} Build={{ build_pcf_build_no }}
-          SVN={{ build_pcf_svn_repo }} BuildDir={{ build_pcf_build_dir }} Disk={{ build_disk_avail.stdout }}GB
-        insertafter: EOF
-        create: yes
-      ignore_errors: yes
+      shell: |
+        cat >> "{{ build_pcf_log }}" <<EOF
 
-    - name: "Log pre-flight checks passed"
-      lineinfile:
-        path: "{{ build_pcf_log }}"
-        line: "[PRE-FLIGHT] ✅ All pre-flight checks passed — {{ ansible_date_time.iso8601 }}"
-        insertafter: EOF
-        create: yes
+[VALIDATE][COMPLETE] {{ ansible_date_time.iso8601 }}
+Version={{ build_pcf_version }} Branch={{ build_pcf_branch }} Build={{ build_pcf_build_no }}
+SVN={{ build_pcf_svn_repo }} BuildDir={{ build_pcf_build_dir }} Disk={{ build_disk_avail.stdout }}GB
+
+[PRE-FLIGHT] ✅ All pre-flight checks passed — {{ ansible_date_time.iso8601 }}
+EOF
+      args:
+        executable: /bin/bash
       ignore_errors: yes
 
   rescue:
     - name: "Log prerequisite check failure"
-      lineinfile:
-        path: "{{ build_pcf_log }}"
-        line: "[VALIDATE][PREREQ_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }}"
-        insertafter: EOF
-        create: yes
-      ignore_errors: yes
-
-    - name: "Log pre-flight check failure"
-      lineinfile:
-        path: "{{ build_pcf_log }}"
-        line: "[PRE-FLIGHT] ❌ FAILED — {{ ansible_date_time.iso8601 }}"
-        insertafter: EOF
-        create: yes
+      shell: |
+        echo "[VALIDATE][PREREQ_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }}" >> "{{ build_pcf_log }}" 2>/dev/null || true
+        echo "[PRE-FLIGHT] ❌ FAILED — {{ ansible_date_time.iso8601 }}" >> "{{ build_pcf_log }}" 2>/dev/null || true
       ignore_errors: yes
 
     - name: "Fail with context"

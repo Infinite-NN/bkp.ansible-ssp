@@ -12,6 +12,8 @@
 // ✅ Improved artifact collection
 // ✅ Variable validation & defaults
 // ✅ Pre-flight checks
+// ✅ FIXED: Branch discovery pipe syntax
+// ✅ FIXED: Removed undefined SSH_KEY variable
 // =============================================================
 
 // @Library('avaya-shared-lib@main') _
@@ -504,13 +506,17 @@ def discoverBranches() {
         set -euo pipefail
 
         if [ ! -d "${SVN_REPOS_LOCAL}" ]; then
-            echo "❌ ERROR: SVN_REPOS_LOCAL not found at: ${SVN_REPOS_LOCAL}"  >&2
+            echo "❌ ERROR: SVN_REPOS_LOCAL not found at: ${SVN_REPOS_LOCAL}" >&2
             exit 1
         fi
 
-        echo "🔍 Scanning for PCF branches matching pattern: 10.2.1.*_orion_int"
+        echo "🔍 Scanning for PCF branches matching pattern: 10.2.1.*_orion_int" >&2
 
-        find "${SVN_REPOS_LOCAL}"  -maxdepth 1  -type d -name '10.2.1.*_orion_int' -printf '%f\\n' sort -V | tr '\\n' ' '  >&2
+        find "${SVN_REPOS_LOCAL}" \
+            -maxdepth 1 \
+            -type d \
+            -name '10.2.1.*_orion_int' \
+            -printf '%f\\n' | sort -V | tr '\\n' ' '
 
         echo "" >&2  # newline for logging
         ''',
@@ -594,7 +600,7 @@ def buildPcfModules() {
                         -e "build_no=${BUILD_NO}" \\
                         -e "module_ver=${MODULE_VER}" \\
                         -e "environment=${ENVIRONMENT}" \\
-                        -e "scm_token_present=yes" \\
+                        -e "svn_repos_local=${SVN_REPOS_LOCAL}" \\
                         $([ "${DRY_RUN}" = "true" ] && echo "--check" || true) \\
                         --extra-vars "ansible_user=root" \\
                         -v \\
@@ -623,6 +629,8 @@ def runSecurityUpdates() {
         set -euo pipefail
 
         echo "===== RUNNING SECURITY UPDATES ====="
+        echo "Environment: ${ENVIRONMENT}"
+        echo "DRY_RUN    : ${DRY_RUN}"
 
         ansible-playbook \\
             -i ${ANSIBLE_INVENTORY}/hosts.ini \\
