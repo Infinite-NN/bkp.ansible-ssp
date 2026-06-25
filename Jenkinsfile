@@ -12,7 +12,6 @@
 // ✅ Improved artifact collection
 // ✅ Variable validation & defaults
 // ✅ Pre-flight checks
-// ✅ Teams notifications (working)
 // =============================================================
 
 // @Library('avaya-shared-lib@main') _
@@ -23,7 +22,7 @@ pipeline {
 
     options {
         timestamps()
-        ansiColor('xterm')
+        // ansiColor('xterm')
         buildDiscarder(logRotator(
             numToKeepStr:        '30',
             artifactNumToKeepStr: '10',
@@ -99,7 +98,6 @@ pipeline {
         // Jenkins Credentials (from Jenkins Credential Store)
         SUDO_CRED_ID      = 'avaya-build-sudo'
         SCM_CRED_ID       = 'avaya-scm-token'
-        TEAMS_WEBHOOK_ID  = 'avaya-teams-webhook'
 
         // Build Metadata
         BUILD_START_TIME  = sh(script: 'date +%s', returnStdout: true).trim()
@@ -332,9 +330,9 @@ pipeline {
             script {
                 if (currentBuild.result == 'SUCCESS' || currentBuild.result == 'ABORTED') {
                     cleanWs(
-                        deleteDirs:       true,
-                        patterns:        [[pattern: 'inventories/**', type: 'INCLUDE']],
-                        notFailBuild:    true
+                        deleteDirs:    true,
+                        patterns:      [[pattern: 'inventories/**', type: 'INCLUDE']],
+                        notFailBuild:  true
                     )
                 }
             }
@@ -348,9 +346,6 @@ pipeline {
             ║  Duration: ${calculateDuration()}
             ╚════════════════════════════════════╝
             """
-            script {
-                notifyTeams('SUCCESS', calculateDuration())
-            }
         }
 
         failure {
@@ -361,23 +356,14 @@ pipeline {
             ║  Failed Stage: ${env.STAGE_NAME ?: 'Unknown'}
             ╚════════════════════════════════════╝
             """
-            script {
-                notifyTeams('FAILURE', calculateDuration())
-            }
         }
 
         unstable {
             echo "⚠️  PIPELINE UNSTABLE — Build #${BUILD_NUMBER}"
-            script {
-                notifyTeams('UNSTABLE', calculateDuration())
-            }
         }
 
         aborted {
             echo "🛑 PIPELINE ABORTED — Build #${BUILD_NUMBER}"
-            script {
-                notifyTeams('ABORTED', calculateDuration())
-            }
         }
 
     } // end post
@@ -386,7 +372,7 @@ pipeline {
 
 
 // =============================================================
-// HELPER FUNCTIONS (ENHANCED)
+// HELPER FUNCTIONS
 // =============================================================
 
 def validateParameters() {
@@ -459,7 +445,7 @@ def prepareWorkspace() {
 
     echo "📋 Copying Ansible playbooks from backup..."
     cp -rv ${ANSIBLE_BKP_SRC}/{inventories,playbooks,library} .
-    
+
     if [ ! -d "inventories" ]; then
         echo "❌ ERROR: inventories directory missing after copy"
         exit 1
@@ -480,39 +466,37 @@ def prepareWorkspace() {
 }
 
 def healthCheckConnectivity() {
-        {
-        sh '''
-        set -euo pipefail
+    sh '''
+    set -euo pipefail
 
-        echo "===== HEALTH CHECK: CONNECTIVITY ====="
+    echo "===== HEALTH CHECK: CONNECTIVITY ====="
 
-        # Test SSH to build server
-        echo "🔌 Testing SSH connection to bambooagent@buildserver..."
-        if ssh -i ${SSH_KEY} \
-               -o ConnectTimeout=10 \
-               -o StrictHostKeyChecking=accept-new \
-               bambooagent@buildserver \
-               "echo 'SSH test successful'" > /dev/null 2>&1; then
-            echo "✅ SSH connection: OK"
-        else
-            echo "❌ SSH connection FAILED — verify key and network"
-            exit 1
-        fi
+    # Test SSH to build server
+    echo "🔌 Testing SSH connection to bambooagent@buildserver..."
+    if ssh -i ${SSH_KEY} \
+           -o ConnectTimeout=10 \
+           -o StrictHostKeyChecking=accept-new \
+           bambooagent@buildserver \
+           "echo 'SSH test successful'" > /dev/null 2>&1; then
+        echo "✅ SSH connection: OK"
+    else
+        echo "❌ SSH connection FAILED — verify key and network"
+        exit 1
+    fi
 
-        # Test ansible inventory parsing
-        echo "🔌 Testing Ansible inventory..."
-        if ansible-inventory \
-               -i ${ANSIBLE_INVENTORY}/hosts.ini \
-               --list > /dev/null 2>&1; then
-            echo "✅ Ansible inventory: OK"
-        else
-            echo "❌ Ansible inventory parse FAILED"
-            exit 1
-        fi
+    # Test ansible inventory parsing
+    echo "🔌 Testing Ansible inventory..."
+    if ansible-inventory \
+           -i ${ANSIBLE_INVENTORY}/hosts.ini \
+           --list > /dev/null 2>&1; then
+        echo "✅ Ansible inventory: OK"
+    else
+        echo "❌ Ansible inventory parse FAILED"
+        exit 1
+    fi
 
-        echo "✅ All connectivity checks passed"
-        '''
-    }
+    echo "✅ All connectivity checks passed"
+    '''
 }
 
 def discoverBranches() {
@@ -526,7 +510,7 @@ def discoverBranches() {
         fi
 
         echo "🔍 Scanning for PCF branches matching pattern: 10.2.1.*_orion_int"
-        
+
         find "${SVN_REPOS_LOCAL}" \
             -maxdepth 1 \
             -type d \
@@ -594,45 +578,43 @@ def buildPcfModules() {
         parallelJobs["Build: ${branch}"] = {
             stage("Build: ${branch}") {
                 retry(2) {
-                     {
-                        sh '''
-                        set -euo pipefail
+                    sh '''
+                    set -euo pipefail
 
-                        BRANCH="''' + branch + '''"
-                        LOG_FILE="logs/build_pcf_${BRANCH}_${BUILD_NUMBER}.log"
+                    BRANCH="''' + branch + '''"
+                    LOG_FILE="logs/build_pcf_${BRANCH}_${BUILD_NUMBER}.log"
 
-                        echo "=========================================="
-                        echo "PCF Branch Build"
-                        echo "=========================================="
-                        echo "Branch   : ${BRANCH}"
-                        echo "Build No : ${BUILD_NO}"
-                        echo "Module   : ${MODULE_VER}"
-                        echo "Env      : ${ENVIRONMENT}"
-                        echo "DRY_RUN  : ${DRY_RUN}"
-                        echo "=========================================="
+                    echo "=========================================="
+                    echo "PCF Branch Build"
+                    echo "=========================================="
+                    echo "Branch   : ${BRANCH}"
+                    echo "Build No : ${BUILD_NO}"
+                    echo "Module   : ${MODULE_VER}"
+                    echo "Env      : ${ENVIRONMENT}"
+                    echo "DRY_RUN  : ${DRY_RUN}"
+                    echo "=========================================="
 
-                        ansible-playbook \\
-                            -i ${ANSIBLE_INVENTORY}/hosts.ini \\
-                            playbooks/build_pcf.yml \\
-                            -e "branch=${BRANCH}" \\
-                            -e "build_no=${BUILD_NO}" \\
-                            -e "module_ver=${MODULE_VER}" \\
-                            -e "environment=${ENVIRONMENT}" \\
-                            -e "scm_token_present=yes" \\
-                            $([ "${DRY_RUN}" = "true" ] && echo "--check" || true) \\
-                            --extra-vars "ansible_user=root" \\
-                            -v \\
-                        2>&1 | tee "${LOG_FILE}"
+                    ansible-playbook \\
+                        -i ${ANSIBLE_INVENTORY}/hosts.ini \\
+                        playbooks/build_pcf.yml \\
+                        -e "branch=${BRANCH}" \\
+                        -e "build_no=${BUILD_NO}" \\
+                        -e "module_ver=${MODULE_VER}" \\
+                        -e "environment=${ENVIRONMENT}" \\
+                        -e "scm_token_present=yes" \\
+                        $([ "${DRY_RUN}" = "true" ] && echo "--check" || true) \\
+                        --extra-vars "ansible_user=root" \\
+                        -v \\
+                    2>&1 | tee "${LOG_FILE}"
 
-                        BUILD_RESULT=${PIPESTATUS[0]}
-                        if [ ${BUILD_RESULT} -ne 0 ]; then
-                            echo "❌ Build FAILED for branch: ${BRANCH}"
-                            exit ${BUILD_RESULT}
-                        fi
+                    BUILD_RESULT=${PIPESTATUS[0]}
+                    if [ ${BUILD_RESULT} -ne 0 ]; then
+                        echo "❌ Build FAILED for branch: ${BRANCH}"
+                        exit ${BUILD_RESULT}
+                    fi
 
-                        echo "✅ Build SUCCESS for branch: ${BRANCH}"
-                        '''
-                    }
+                    echo "✅ Build SUCCESS for branch: ${BRANCH}"
+                    '''
                 }
             }
         }
@@ -643,83 +625,77 @@ def buildPcfModules() {
 }
 
 def runSecurityUpdates() {
- {
-        retry(1) {
-            sh '''
-            set -euo pipefail
-
-            echo "===== RUNNING SECURITY UPDATES ====="
-
-            ansible-playbook \\
-                -i ${ANSIBLE_INVENTORY}/hosts.ini \\
-                --private-key ${SSH_KEY} \\
-                -e "environment=${ENVIRONMENT}" \\
-                -e "log_timestamp=${BUILD_NUMBER}" \\
-                $([ "${DRY_RUN}" = "true" ] && echo "--check" || true) \\
-                --extra-vars "ansible_user=root" \\
-                -v \\
-                playbooks/security_updates.yml \\
-            2>&1 | tee logs/security_updates_${BUILD_NUMBER}.log
-
-            if [ ${PIPESTATUS[0]} -ne 0 ]; then
-                echo "⚠️  Security updates returned non-zero exit"
-                # Non-blocking — continue
-            fi
-            '''
-        }
-    }
-}
-
-def runSspPipeline() {
- {
-        retry(1) {
-            sh '''
-            set -euo pipefail
-
-            echo "===== RUNNING SSP FULL PIPELINE ====="
-            echo "Environment: ${ENVIRONMENT}"
-            echo "DRY_RUN    : ${DRY_RUN}"
-
-            ansible-playbook \\
-                -i ${ANSIBLE_INVENTORY}/hosts.ini \\
-                --private-key ${SSH_KEY} \\
-                -e "environment=${ENVIRONMENT}" \\
-                -e "build_number=${BUILD_NUMBER}" \\
-                -e "module_version=${MODULE_VER}" \\
-                $([ "${DRY_RUN}" = "true" ] && echo "--check" || true) \\
-                --extra-vars "ansible_user=root" \\
-                -v \\
-                playbooks/ssp_install.yml \\
-            2>&1 | tee logs/ssp_install_${BUILD_NUMBER}.log
-
-            if [ ${PIPESTATUS[0]} -ne 0 ]; then
-                echo "❌ SSP pipeline FAILED"
-                exit 1
-            fi
-
-            echo "✅ SSP pipeline SUCCESS"
-            '''
-        }
-    }
-}
-
-def runPostRebootValidation() {
- {
+    retry(1) {
         sh '''
         set -euo pipefail
 
-        echo "===== POST-REBOOT VALIDATION ====="
+        echo "===== RUNNING SECURITY UPDATES ====="
 
         ansible-playbook \\
             -i ${ANSIBLE_INVENTORY}/hosts.ini \\
             --private-key ${SSH_KEY} \\
             -e "environment=${ENVIRONMENT}" \\
+            -e "log_timestamp=${BUILD_NUMBER}" \\
+            $([ "${DRY_RUN}" = "true" ] && echo "--check" || true) \\
             --extra-vars "ansible_user=root" \\
             -v \\
-            playbooks/post_reboot_validation.yml \\
-        2>&1 | tee logs/post_reboot_${BUILD_NUMBER}.log || true
+            playbooks/security_updates.yml \\
+        2>&1 | tee logs/security_updates_${BUILD_NUMBER}.log
+
+        if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            echo "⚠️  Security updates returned non-zero exit"
+            # Non-blocking — continue
+        fi
         '''
     }
+}
+
+def runSspPipeline() {
+    retry(1) {
+        sh '''
+        set -euo pipefail
+
+        echo "===== RUNNING SSP FULL PIPELINE ====="
+        echo "Environment: ${ENVIRONMENT}"
+        echo "DRY_RUN    : ${DRY_RUN}"
+
+        ansible-playbook \\
+            -i ${ANSIBLE_INVENTORY}/hosts.ini \\
+            --private-key ${SSH_KEY} \\
+            -e "environment=${ENVIRONMENT}" \\
+            -e "build_number=${BUILD_NUMBER}" \\
+            -e "module_version=${MODULE_VER}" \\
+            $([ "${DRY_RUN}" = "true" ] && echo "--check" || true) \\
+            --extra-vars "ansible_user=root" \\
+            -v \\
+            playbooks/ssp_install.yml \\
+        2>&1 | tee logs/ssp_install_${BUILD_NUMBER}.log
+
+        if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            echo "❌ SSP pipeline FAILED"
+            exit 1
+        fi
+
+        echo "✅ SSP pipeline SUCCESS"
+        '''
+    }
+}
+
+def runPostRebootValidation() {
+    sh '''
+    set -euo pipefail
+
+    echo "===== POST-REBOOT VALIDATION ====="
+
+    ansible-playbook \\
+        -i ${ANSIBLE_INVENTORY}/hosts.ini \\
+        --private-key ${SSH_KEY} \\
+        -e "environment=${ENVIRONMENT}" \\
+        --extra-vars "ansible_user=root" \\
+        -v \\
+        playbooks/post_reboot_validation.yml \\
+    2>&1 | tee logs/post_reboot_${BUILD_NUMBER}.log || true
+    '''
 }
 
 def collectArtifacts() {
@@ -861,100 +837,6 @@ SUMMARY_EOF
     echo "✅ Build summary generated: artifacts/build_summary.html"
     '''
 }
-
-def notifyTeams(String status, String duration) {
-    /*
-    withCredentials([string(credentialsId: env.TEAMS_WEBHOOK_ID, variable: 'TEAMS_WEBHOOK')]) {
-        sh '''
-        set -euo pipefail
-
-        STATUS="''' + status + '''"
-        DURATION="''' + duration + '''"
-
-        # Color coding for Teams message
-        case "${STATUS}" in
-            "SUCCESS")
-                COLOR="28a745"
-                EMOJI="✅"
-                ;;
-            "FAILURE")
-                COLOR="dc3545"
-                EMOJI="❌"
-                ;;
-            "UNSTABLE")
-                COLOR="ffc107"
-                EMOJI="⚠️"
-                ;;
-            "ABORTED")
-                COLOR="6c757d"
-                EMOJI="🛑"
-                ;;
-            *)
-                COLOR="0066cc"
-                EMOJI="ℹ️"
-                ;;
-        esac
-
-        PAYLOAD=$(cat <<EOF
-        {
-            "@type": "MessageCard",
-            "@context": "https://schema.org/extensions",
-            "summary": "${EMOJI} Avaya SBCE Build #${BUILD_NUMBER} ${STATUS}",
-            "themeColor": "${COLOR}",
-            "sections": [
-                {
-                    "activityTitle": "${EMOJI} Build #${BUILD_NUMBER} — ${STATUS}",
-                    "activitySubtitle": "Avaya SBCE SSP + PCF Build Pipeline",
-                    "facts": [
-                        {
-                            "name": "Environment:",
-                            "value": "${ENVIRONMENT}"
-                        },
-                        {
-                            "name": "Build No:",
-                            "value": "${BUILD_NO}"
-                        },
-                        {
-                            "name": "Module Version:",
-                            "value": "${MODULE_VER}"
-                        },
-                        {
-                            "name": "Duration:",
-                            "value": "${DURATION}"
-                        },
-                        {
-                            "name": "Host:",
-                            "value": "${BUILD_HOSTNAME}"
-                        }
-                    ],
-                    "markdown": true
-                }
-            ],
-            "potentialAction": [
-                {
-                    "@type": "OpenUri",
-                    "name": "View Build",
-                    "targets": [
-                        {
-                            "os": "default",
-                            "uri": "${BUILD_URL}"
-                        }
-                    ]
-                }
-            ]
-        }
-EOF
-        )
-
-        echo "📢 Posting to Teams webhook..."
-        curl -H 'Content-Type: application/json' \\
-             -d "${PAYLOAD}" \\
-             "${TEAMS_WEBHOOK}" \\
-             2>/dev/null || echo "⚠️  Teams notification may have failed (non-blocking)"
-        '''
-    }
-}
-*/
 
 def calculateDuration() {
     return sh(
