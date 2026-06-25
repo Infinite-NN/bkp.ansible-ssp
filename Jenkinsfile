@@ -505,19 +505,13 @@ def discoverBranches() {
         set -euo pipefail
 
         if [ ! -d "${SVN_REPOS_LOCAL}" ]; then
-            echo "❌ ERROR: SVN_REPOS_LOCAL not found at: ${SVN_REPOS_LOCAL}"
+            echo "❌ ERROR: SVN_REPOS_LOCAL not found at: ${SVN_REPOS_LOCAL}"  >&2
             exit 1
         fi
 
         echo "🔍 Scanning for PCF branches matching pattern: 10.2.1.*_orion_int"
 
-        find "${SVN_REPOS_LOCAL}" \
-            -maxdepth 1 \
-            -type d \
-            -name '10.2.1.*_orion_int' \
-            -printf '%f\\n' \
-        | sort -V \
-        | tr '\\n' ' '
+        find "${SVN_REPOS_LOCAL}"  -maxdepth 1  -type d -name '10.2.1.*_orion_int' -printf '%f\\n' sort -V | tr '\\n' ' '  >&2
 
         echo "" >&2  # newline for logging
         ''',

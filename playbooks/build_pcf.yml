@@ -33,7 +33,7 @@
             that:
               - pcf_branch is defined
               - pcf_branch | length > 0
-              - pcf_branch is regex('^10\.2\.1\.*_orion_int$')
+              - pcf_branch is regex('^10\.2\.1\.[0-9]+_orion_int$')
             fail_msg: "❌ Invalid PCF branch: {{ pcf_branch }}"
             success_msg: "✅ Branch validation passed: {{ pcf_branch }}"
 
