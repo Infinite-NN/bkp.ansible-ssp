@@ -86,7 +86,7 @@
         msg: |
           ❌ Kernel RPM file not found after download
           Expected: {{ kernel_work_dir }}/{{ kernel_rpm_file }}
-      when: not kernel_rpm_stat.exists
+      when: not kernel_rpm_stat.stat.exists
 
     - name: "Display kernel RPM details"
       debug:

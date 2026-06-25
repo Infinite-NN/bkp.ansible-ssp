@@ -114,7 +114,7 @@
           Troubleshooting:
           - Check SVN repos path: ls -la {{ build_pcf_svn_repo | dirname }}
           - Verify branch exists: ls -la {{ build_pcf_svn_repo }}
-      when: not svn_repo_stat.stat.exists
+      when: not svn_repo_stat.stat.stat.exists
 
     - name: "Check available disk space for build"
       shell: |
