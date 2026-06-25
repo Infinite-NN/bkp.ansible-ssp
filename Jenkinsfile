@@ -473,8 +473,7 @@ def healthCheckConnectivity() {
 
     # Test SSH to build server
     echo "🔌 Testing SSH connection to bambooagent@buildserver..."
-    if ssh -i ${SSH_KEY} \
-           -o ConnectTimeout=10 \
+    if ssh -o ConnectTimeout=10 \
            -o StrictHostKeyChecking=accept-new \
            bambooagent@buildserver \
            "echo 'SSH test successful'" > /dev/null 2>&1; then
@@ -627,7 +626,6 @@ def runSecurityUpdates() {
 
         ansible-playbook \\
             -i ${ANSIBLE_INVENTORY}/hosts.ini \\
-            --private-key ${SSH_KEY} \\
             -e "environment=${ENVIRONMENT}" \\
             -e "log_timestamp=${BUILD_NUMBER}" \\
             $([ "${DRY_RUN}" = "true" ] && echo "--check" || true) \\
@@ -683,7 +681,6 @@ def runPostRebootValidation() {
 
     ansible-playbook \\
         -i ${ANSIBLE_INVENTORY}/hosts.ini \\
-        --private-key ${SSH_KEY} \\
         -e "environment=${ENVIRONMENT}" \\
         --extra-vars "ansible_user=root" \\
         -v \\
