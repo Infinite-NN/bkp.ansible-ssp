@@ -449,6 +449,8 @@ def prepareWorkspace() {
         exit 1
     fi
 
+    deleteDir()
+
     echo "📋 Copying Ansible playbooks from backup..."
     cp -rv ${ANSIBLE_BKP_SRC}/{inventories,playbooks,library} .
 
