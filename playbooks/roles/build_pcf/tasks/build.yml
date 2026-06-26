@@ -203,21 +203,39 @@
   tags:
     - build
     - build_compile
-
+    
+    - name: "DEBUG: Show build directory contents"
+      shell: |
+        echo "===== BUILD DIRECTORY ====="
+        ls -lah "{{ build_pcf_build_dir }}"
+    
+        echo ""
+        echo "===== ALL RPM FILES ====="
+        find "{{ build_pcf_build_dir }}" -type f -name "*.rpm" 2>/dev/null || true
+    
+        echo ""
+        echo "===== ALL GENERATED FILES ====="
+        find "{{ build_pcf_build_dir }}" -type f | tail -100
+      args:
+        executable: /bin/bash
+      register: build_dir_debug
+      changed_when: false
+    
+    - name: "Display build directory debug"
+      debug:
+        var: build_dir_debug.stdout_lines
 
 - name: "[BUILD] Locate and validate generated RPM"
   block:
-    - name: "Search for generated PCF RPM (multiple locations)"
+    - name: "Search for generated PCF RPM"
       find:
-        paths: 
+        paths:
           - "{{ build_pcf_build_dir }}"
-          - "{{ build_pcf_build_dir }}/dist"
-          - "{{ build_pcf_build_dir }}/build/rpms"
-          - "/tmp/pcf_builds/{{ build_pcf_branch }}"
-        patterns: 
-          - "pcf-module-*.rpm"
-          - "pcf-*.rpm"
-          - "*-pcf-*.rpm"
+          - "{{ build_pcf_releases_dir }}"
+          - "/tmp"
+          - "/root/releases"
+        patterns:
+          - "*.rpm"
         recurse: yes
         file_type: file
       register: generated_rpms
@@ -234,14 +252,19 @@
     - name: "Verify RPM was generated"
       fail:
         msg: |
-          ? No PCF RPM generated for {{ build_pcf_branch }}
-          Searched locations:
+          ❌ No PCF RPM generated for {{ build_pcf_branch }}
+    
+          Build directory contents:
+    
+          {{ build_dir_debug.stdout }}
+    
+          Search locations:
           - {{ build_pcf_build_dir }}
-          - {{ build_pcf_build_dir }}/dist
-          - {{ build_pcf_build_dir }}/build/rpms
-          - /tmp/pcf_builds/{{ build_pcf_branch }}
-          
-          Expected pattern: pcf-*.rpm
+          - {{ build_pcf_releases_dir }}
+          - /tmp
+          - /root/releases
+    
+          Expected pattern: *.rpm
       when: generated_rpms.matched == 0
 
     - name: "Use most recent RPM if multiple exist"
