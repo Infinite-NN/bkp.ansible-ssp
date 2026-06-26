@@ -278,14 +278,15 @@
       set_fact:
         build_pcf_rpm_path: "{{ generated_rpms.files | sort(attribute='mtime', reverse=true) | first }}"
 
-    - name: "Display found RPM"
+    - name: Display found RPM
       debug:
         msg: |
-          ? PCF RPM located:
+          ✅ PCF RPM located:
           Path: {{ build_pcf_rpm_path.path }}
           Size: {{ build_pcf_rpm_path.size }} bytes
-          Modified: {{ build_pcf_rpm_path.mtime | int | timestamp_to_date }}
-
+          Modified: {{ (build_pcf_rpm_path.mtime | int) | strftime('%Y-%m-%d %H:%M:%S') }}
+          Mode: {{ build_pcf_rpm_path.mode }}
+          
     - name: "Verify RPM file is valid"
       shell: |
         set -euo pipefail
