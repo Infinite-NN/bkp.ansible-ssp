@@ -124,16 +124,33 @@
     - name: "Step 3/5: Check available disk space"
       shell: |
         set -euo pipefail
-        available_kb=$(df "{{ build_pcf_build_root | dirname }}" 2>/dev/null | awk 'NR==2 {print $4}')
-        available_gb=$((available_kb / 1024 / 1024))
+    
+        target_dir="{{ build_pcf_build_root | dirname }}"
+    
+        if [ ! -d "$target_dir" ]; then
+            target_dir="/tmp"
+        fi
+    
+        available_kb=$(df -Pk "$target_dir" | awk 'NR==2 {print $4}')
+    
+        if [ -z "$available_kb" ]; then
+            echo "0"
+            exit 1
+        fi
+    
+        available_gb=$(( available_kb / 1024 / 1024 ))
+    
         echo "${available_gb}"
+      args:
+        executable: /bin/bash
       register: disk_free_gb
       changed_when: false
-      failed_when:
-        - disk_free_gb.rc != 0
-        - disk_free_gb.stdout | int < 20
+      check_mode: no
       retries: 2
       delay: 1
+      failed_when:
+        - disk_free_gb.rc != 0
+        - (disk_free_gb.stdout | int) < 20
       tags:
         - build_pcf
         - pre_flight
@@ -141,12 +158,16 @@
     - name: "Validate disk space (minimum 20GB required)"
       assert:
         that:
-          - disk_free_gb.stdout | int >= 20
+          - disk_free_gb.stdout is defined
+          - disk_free_gb.stdout | trim | length > 0
+          - (disk_free_gb.stdout | int) >= 20
         fail_msg: |
-          ? INSUFFICIENT DISK SPACE
-            Available: {{ disk_free_gb.stdout }}GB
-            Required: 20GB minimum
-        success_msg: "? Disk space OK: {{ disk_free_gb.stdout }}GB available"
+          INSUFFICIENT DISK SPACE
+    
+          Available : {{ disk_free_gb.stdout | default('UNKNOWN') }} GB
+          Required  : 20 GB minimum
+          Build Root: {{ build_pcf_build_root }}
+        success_msg: "Disk space OK: {{ disk_free_gb.stdout }}GB available"
       tags:
         - build_pcf
         - pre_flight
