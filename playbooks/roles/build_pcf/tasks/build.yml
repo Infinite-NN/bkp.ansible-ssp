@@ -284,7 +284,7 @@
           ✅ PCF RPM located:
           Path: {{ build_pcf_rpm_path.path }}
           Size: {{ build_pcf_rpm_path.size }} bytes
-          Modified: {{ (build_pcf_rpm_path.mtime | int) | strftime('%Y-%m-%d %H:%M:%S') }}
+          Modified: {{ ansible_date_time.iso8601 }}
           Mode: {{ build_pcf_rpm_path.mode }}
           
     - name: "Verify RPM file is valid"
