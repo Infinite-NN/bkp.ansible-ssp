@@ -58,7 +58,7 @@
       loop: "{{ extracted_dirs.files | default([]) }}"
       ignore_errors: yes
 
-  listen: "cleanup extracted ssp"
+  notify: "cleanup extracted ssp"
   when: enable_cleanup_work_dir | default(true) | bool
   tags:
     - cleanup
@@ -80,7 +80,7 @@
       loop: "{{ tar_files.files | default([]) }}"
       ignore_errors: yes
 
-  listen: "remove downloaded tar"
+  notify: "remove downloaded tar"
   when: enable_cleanup_work_dir | default(true) | bool
   tags:
     - cleanup
@@ -112,7 +112,7 @@
       changed_when: true
       ignore_errors: yes
 
-  listen: "stop ipcs"
+  notify: "stop ipcs"
   tags:
     - ipcs
 
@@ -133,7 +133,7 @@
       changed_when: true
       ignore_errors: yes
 
-  listen: "start ipcs"
+  notify: "start ipcs"
   tags:
     - ipcs
 
@@ -155,7 +155,7 @@
       changed_when: true
       ignore_errors: yes
 
-  listen: "restart ipcs"
+  notify: "restart ipcs"
   tags:
     - ipcs
 
@@ -176,7 +176,7 @@
       debug:
         msg: "{{ 'GUI UP' if gui_status.rc == 0 else 'GUI still starting...' }}"
 
-  listen: "wait for gui up"
+  notify: "wait for gui up"
   tags:
     - ipcs
 
@@ -201,7 +201,7 @@
       changed_when: true
       ignore_errors: yes
 
-  listen: "clear lock files"
+  notify: "clear lock files"
   tags:
     - cleanup
 
@@ -239,7 +239,7 @@
       changed_when: true
       ignore_errors: yes
 
-  listen: "rotate pipeline log"
+  notify: "rotate pipeline log"
   tags:
     - logging
 
@@ -288,7 +288,7 @@
           ? Artifacts collected ({{ collected_artifacts.matched }} files):
           {{ collected_artifacts.files | map(attribute='path') | list | join('\n') }}
 
-  listen: "collect ssp artifacts"
+  notify: "collect ssp artifacts"
   tags:
     - artifacts
 
@@ -363,7 +363,7 @@
       debug:
         msg: "{{ diagnostics.stdout_lines | default([]) }}"
 
-  listen: "collect diagnostics"
+  notify: "collect diagnostics"
   tags:
     - diagnostics
 
@@ -408,6 +408,6 @@
         mode: '0644'
       ignore_errors: yes
 
-  listen: "write install summary"
+  notify: "write install summary"
   tags:
     - logging
