@@ -293,6 +293,15 @@
     - build_pcf
     - kernel
 
+- name: "[DEBUG] Build execution context"
+  debug:
+    msg: |
+      ansible_check_mode={{ ansible_check_mode }}
+      build_pcf_branch={{ build_pcf_branch }}
+      build_pcf_build_no={{ build_pcf_build_no }}
+      build_pcf_environment={{ build_pcf_environment }}
+      build tags active
+      
 - name: "[BUILD_PCF] Include main build tasks"
   include_tasks: "build.yml"
   vars:

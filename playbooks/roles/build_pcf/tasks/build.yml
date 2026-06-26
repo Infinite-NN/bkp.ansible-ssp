@@ -2,7 +2,14 @@
 # =============================================================
 # Build PCF -- Compilation and Packaging
 # =============================================================
-
+- name: "[DEBUG] Entered build.yml"
+  debug:
+    msg: |
+      =========================================
+      ENTERED BUILD.YML
+      ansible_check_mode={{ ansible_check_mode }}
+      =========================================
+      
 - name: "[BUILD] Pre-build preparation"
   block:
     - name: "Remove old build directory"
@@ -203,27 +210,27 @@
   tags:
     - build
     - build_compile
-    
-    - name: "DEBUG: Show build directory contents"
-      shell: |
-        echo "===== BUILD DIRECTORY ====="
-        ls -lah "{{ build_pcf_build_dir }}"
-    
-        echo ""
-        echo "===== ALL RPM FILES ====="
-        find "{{ build_pcf_build_dir }}" -type f -name "*.rpm" 2>/dev/null || true
-    
-        echo ""
-        echo "===== ALL GENERATED FILES ====="
-        find "{{ build_pcf_build_dir }}" -type f | tail -100
-      args:
-        executable: /bin/bash
-      register: build_dir_debug
-      changed_when: false
-    
-    - name: "Display build directory debug"
-      debug:
-        var: build_dir_debug.stdout_lines
+
+- name: "DEBUG: Show build directory contents"
+  shell: |
+    echo "===== BUILD DIRECTORY ====="
+    ls -lah "{{ build_pcf_build_dir }}"
+
+    echo ""
+    echo "===== ALL RPM FILES ====="
+    find "{{ build_pcf_build_dir }}" -type f -name "*.rpm" 2>/dev/null || true
+
+    echo ""
+    echo "===== ALL GENERATED FILES ====="
+    find "{{ build_pcf_build_dir }}" -type f | tail -100
+  args:
+    executable: /bin/bash
+  register: build_dir_debug
+  changed_when: false
+
+- name: "Display build directory debug"
+  debug:
+    var: build_dir_debug.stdout_lines
 
 - name: "[BUILD] Locate and validate generated RPM"
   block:
