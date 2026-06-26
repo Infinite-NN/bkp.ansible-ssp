@@ -32,8 +32,6 @@
   tags:
     - cleanup
 
----
-
 - name: recreate ssp work directory
   file:
     path: "{{ ssp_work_dir }}"
@@ -43,8 +41,6 @@
   when: not (cleanup_on_failure | default(false)) | bool
   tags:
     - cleanup
-
----
 
 - name: cleanup extracted ssp archive
   block:
@@ -68,7 +64,6 @@
   tags:
     - cleanup
 
----
 
 - name: remove downloaded tar file
   block:
@@ -91,7 +86,6 @@
   tags:
     - cleanup
 
----
 
 # ---------------------------------------------------------
 # IPCS Service Control Handlers
@@ -123,8 +117,6 @@
   tags:
     - ipcs
 
----
-
 - name: start ipcs service
   block:
     - name: "Start IPCS"
@@ -146,7 +138,6 @@
   tags:
     - ipcs
 
----
 
 - name: restart ipcs service
   block:
@@ -169,7 +160,6 @@
   tags:
     - ipcs
 
----
 
 - name: wait for gui service after ipcs action
   block:
@@ -191,7 +181,6 @@
   tags:
     - ipcs
 
----
 
 # ---------------------------------------------------------
 # Lock File Cleanup
@@ -217,7 +206,6 @@
   tags:
     - cleanup
 
----
 
 # ---------------------------------------------------------
 # Log Rotation Handler
@@ -256,7 +244,7 @@
   tags:
     - logging
 
----
+
 
 # ---------------------------------------------------------
 # Artifact Collection Handlers
@@ -305,7 +293,6 @@
   tags:
     - artifacts
 
----
 
 # ---------------------------------------------------------
 # Diagnostic Collection Handler
@@ -381,7 +368,6 @@
   tags:
     - diagnostics
 
----
 
 # ---------------------------------------------------------
 # Summary Handler
