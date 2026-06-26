@@ -33,7 +33,7 @@ kernel_work_dir: "/tmp/kernel_build"
 # ---------------------------------------------------------
 
 # PCF build script relative path within SVN checkout
-build_pcf_script: "icu/buildtools/bambooBuildRpms"
+build_pcf_script: "/home/bambooagent/agent1/xml-data/build-dir/nn/10.2.1.0_orion_int/icu/buildtools/bambooBuildRpms"
 
 # Chroot binary path
 chroot_bin: "/usr/sbin/chroot"
