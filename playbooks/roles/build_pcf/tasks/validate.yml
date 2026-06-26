@@ -1,7 +1,6 @@
 ---
 # =============================================================
-# Build PCF — Validation Task (FIXED & PRODUCTION-READY)
-# Validates all required variables and paths before build
+# Build PCF — Validation Task (FINAL FIXED VERSION)
 # =============================================================
 
 - name: "[VALIDATE] Initialize build log"
@@ -25,17 +24,17 @@
           Build Number      : {{ build_pcf_build_no }}
           Module Version    : {{ build_pcf_module_ver }}
           Host              : {{ inventory_hostname }}
-          
+
           Build Tasks:
         dest: "{{ build_pcf_log }}"
         mode: '0644'
-        backup: no
+        owner: root
+        group: root
       register: log_init
 
     - name: "Confirm log file created"
       debug:
         msg: "✅ Log file initialized: {{ build_pcf_log }}"
-      when: log_init is succeeded
 
   rescue:
     - name: "Warn if log initialization fails"
@@ -128,6 +127,12 @@
       set_fact:
         build_pcf_version: "{{ build_pcf_branch | regex_replace('_orion_int$', '') }}"
 
+    - name: "Set build environment variable"
+      set_fact:
+        # Use build_environment (non-reserved name from Jenkins)
+        # Falls back to pcf_environment, then to 'production'
+        build_pcf_environment: "{{ build_environment | default(pcf_environment | default('production')) }}"
+
     - name: "Set derived directory paths"
       set_fact:
         build_pcf_svn_repo: "{{ lookup('env', 'SVN_REPOS_LOCAL', wantlist=False) or '/var/lib/jenkins/SVN_repos' }}/{{ build_pcf_branch }}"
@@ -139,13 +144,14 @@
         msg: |
           📁 Derived Build Paths:
           ├─ Version       : {{ build_pcf_version }}
+          ├─ Environment   : {{ build_pcf_environment }}
           ├─ SVN Repo      : {{ build_pcf_svn_repo }}
           ├─ Build Dir     : {{ build_pcf_build_dir }}
           └─ Release Dir   : {{ build_pcf_release_dir }}
 
     - name: "Log derived paths"
       shell: |
-        echo "[VALIDATE][PATHS] Version={{ build_pcf_version }} SVN={{ build_pcf_svn_repo }} BuildDir={{ build_pcf_build_dir }}" >> "{{ build_pcf_log }}"
+        echo "[VALIDATE][PATHS] Version={{ build_pcf_version }} Env={{ build_pcf_environment }} SVN={{ build_pcf_svn_repo }} BuildDir={{ build_pcf_build_dir }}" >> "{{ build_pcf_log }}"
       args:
         executable: /bin/bash
       ignore_errors: yes
@@ -166,12 +172,12 @@
       fail:
         msg: |
           ❌ SVN Repository not found at: {{ build_pcf_svn_repo }}
-          
+
           Possible causes:
           - SVN repository not synced from buildserver
           - Incorrect branch name: {{ build_pcf_branch }}
           - SVN sync failed during workspace preparation
-          
+
           Troubleshooting:
           - Check SVN repos path: ls -la {{ build_pcf_svn_repo | dirname }}
           - Verify branch exists: ls -la {{ build_pcf_svn_repo }}
@@ -204,12 +210,9 @@
 
     - name: "Log validation complete"
       shell: |
-        cat >> "{{ build_pcf_log }}" <<'EOF'
-
-[VALIDATE][COMPLETE] {{ ansible_date_time.iso8601 }}
-Version={{ build_pcf_version }} Branch={{ build_pcf_branch }} Build={{ build_pcf_build_no }}
-SVN={{ build_pcf_svn_repo }} BuildDir={{ build_pcf_build_dir }} Disk={{ build_disk_avail.stdout }}GB
-EOF
+        echo "[VALIDATE][COMPLETE] {{ ansible_date_time.iso8601 }}" >> "{{ build_pcf_log }}"
+        echo "Version={{ build_pcf_version }} Branch={{ build_pcf_branch }} Build={{ build_pcf_build_no }}" >> "{{ build_pcf_log }}"
+        echo "SVN={{ build_pcf_svn_repo }} BuildDir={{ build_pcf_build_dir }} Disk={{ build_disk_avail.stdout }}GB" >> "{{ build_pcf_log }}"
       args:
         executable: /bin/bash
       ignore_errors: yes

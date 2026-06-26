@@ -599,8 +599,9 @@ def buildPcfModules() {
                         -e "branch=${BRANCH}" \\
                         -e "build_no=${BUILD_NO}" \\
                         -e "module_ver=${MODULE_VER}" \\
-                        -e "environment=${ENVIRONMENT}" \\
+                        -e "build_environment=${ENVIRONMENT}" \\
                         -e "svn_repos_local=${SVN_REPOS_LOCAL}" \\
+                        -e "scm_token_present=yes" \\
                         $([ "${DRY_RUN}" = "true" ] && echo "--check" || true) \\
                         --extra-vars "ansible_user=root" \\
                         -v \\
