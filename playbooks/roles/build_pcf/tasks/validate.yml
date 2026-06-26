@@ -106,13 +106,12 @@
           Got: {{ build_pcf_module_ver }}
         success_msg: "? Module version format valid: {{ build_pcf_module_ver }}"
 
-    - name: "Log validation passed"
-      lineinfile:
+    - name: "Log validation completion"
+      ansible.builtin.lineinfile:
         path: "{{ build_pcf_log }}"
         line: "[VALIDATE][COMPLETE] {{ ansible_date_time.iso8601 }}"
         create: true
-      args:
-        executable: /bin/bash
+        insertafter: EOF
       ignore_errors: yes
       changed_when: false
 
