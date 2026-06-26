@@ -179,6 +179,7 @@ pipeline {
                             error "No PCF branches matching '10.2.1.*_orion_int' pattern found"
                         }
                         def branches = env.PCF_BRANCHES.tokenize()
+
                         echo """
                         PCF Branch Discovery: PASS
                         Branches found (${branches.size()}):
@@ -449,7 +450,7 @@ def prepareWorkspace() {
     fi
 
     echo "📋 Copying Ansible playbooks from backup..."
-    rsync -av --delete ${ANSIBLE_BKP_SRC}/${WORKSPACE}/
+    cp -rv ${ANSIBLE_BKP_SRC}/{inventories,playbooks,library} .
 
     if [ ! -d "inventories" ]; then
         echo "❌ ERROR: inventories directory missing after copy"
