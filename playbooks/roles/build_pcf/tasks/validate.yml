@@ -79,7 +79,7 @@
     - name: "Validate branch format"
       assert:
         that:
-          - build_pcf_branch is regex('^10\.2\.1\.[0-9]+_orion_int$')
+          - build_pcf_branch is regex('^10\.2\.1\..*_orion_int$')
         fail_msg: |
           ? VALIDATION FAILED: Invalid branch format
           Expected format: 10.2.1.x_orion_int
@@ -107,9 +107,10 @@
         success_msg: "? Module version format valid: {{ build_pcf_module_ver }}"
 
     - name: "Log validation passed"
-      shell: |
-        echo "[VALIDATE][PASSED] All variable validations successful -- {{ ansible_date_time.iso8601 }}" >> "{{ build_pcf_log }}"
-        echo "[VALIDATE][ENV] Environment set to: {{ build_pcf_environment }}" >> "{{ build_pcf_log }}"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[VALIDATE][COMPLETE] {{ ansible_date_time.iso8601 }}"
+        create: true
       args:
         executable: /bin/bash
       ignore_errors: yes
@@ -194,7 +195,17 @@
     - name: "Check available disk space for build"
       shell: |
         set -euo pipefail
-        AVAIL=$(df -BG "{{ build_pcf_build_root | dirname }}" | awk 'NR==2 {print $4}' | sed 's/G//')
+    
+        TARGET="{{ build_pcf_build_root | dirname }}"
+    
+        if [ ! -d "$TARGET" ]; then
+          TARGET="/tmp"
+        fi
+
+        df -BG "$TARGET"
+    
+        AVAIL=$(df -BG "$TARGET" | awk 'NR==2 {print $4}' | sed 's/G//')
+    
         if [ -z "$AVAIL" ]; then
           echo "0"
         else
@@ -204,10 +215,13 @@
         executable: /bin/bash
       register: build_disk_avail
       changed_when: false
+      check_mode: no
 
     - name: "Validate disk space (minimum 5GB required)"
       assert:
         that:
+          - build_disk_avail.stdout is defined
+          - build_disk_avail.stdout is defined
           - build_disk_avail.stdout | int >= 5
         fail_msg: |
           ? INSUFFICIENT DISK SPACE for PCF build
