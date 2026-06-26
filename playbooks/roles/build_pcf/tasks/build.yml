@@ -27,7 +27,7 @@
       shell: |
         set -euo pipefail
         mkdir -p "{{ build_pcf_build_dir }}"
-        cp -rv "{{ build_pcf_svn_repo }}"/* "{{ build_pcf_build_dir }}/"
+        cp -r "{{ build_pcf_svn_repo }}"/* "{{ build_pcf_build_dir }}/"
         echo "? Repository copied to build directory"
       args:
         executable: /bin/bash
