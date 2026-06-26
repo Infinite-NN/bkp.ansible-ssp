@@ -36,7 +36,7 @@
     path: "{{ ssp_work_dir }}"
     state: directory
     mode: '0755'
-  listen: "cleanup ssp work dir"
+  notify: "cleanup ssp work dir"
   when: not (cleanup_on_failure | default(false)) | bool
   tags:
     - cleanup
