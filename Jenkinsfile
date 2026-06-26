@@ -1,19 +1,19 @@
 // =============================================================
 // Jenkinsfile — Avaya SBCE SSP + PCF Build Pipeline
-// Production-Grade Declarative Pipeline (ENHANCED)
+// Production-Grade Declarative Pipeline (SEQUENTIAL PCF BUILD)
 // =============================================================
-// FIXES:
+// ENHANCEMENTS:
+// ✅ Sequential PCF builds (one-by-one)
 // ✅ Path consistency (inventories/ plural)
 // ✅ Better error handling & context
 // ✅ Proper credentials scoping
 // ✅ Log masking for secrets
-// ✅ Parallel job limits
 // ✅ Health checks & connectivity tests
 // ✅ Improved artifact collection
 // ✅ Variable validation & defaults
 // ✅ Pre-flight checks
-// ✅ FIXED: Branch discovery pipe syntax
-// ✅ FIXED: Removed undefined SSH_KEY variable
+// ✅ Branch discovery with pattern matching
+// ✅ Build progress tracking [N/Total]
 // =============================================================
 
 // @Library('avaya-shared-lib@main') _
@@ -70,10 +70,10 @@ pipeline {
             defaultValue: false,
             description:  'Syntax check only — no infrastructure changes'
         )
-        string(
-            name:         'PARALLEL_BUILD_LIMIT',
-            defaultValue: '4',
-            description:  'Max parallel PCF builds'
+        booleanParam(
+            name:         'CONTINUE_ON_BUILD_FAILURE',
+            defaultValue: false,
+            description:  'Continue building remaining branches if one fails (best-effort mode)'
         )
     }
 
@@ -181,7 +181,7 @@ pipeline {
                         def branches = env.PCF_BRANCHES.tokenize()
 
                         echo """
-                        PCF Branch Discovery: PASS
+                        ✅ PCF Branch Discovery: PASS
                         Branches found (${branches.size()}):
                         ${branches.join('\n')}
                         """
@@ -213,7 +213,7 @@ pipeline {
         }
 
         // ──────────────────────────────────────────────
-        stage('⚙️  Build PCF Modules') {
+        stage('⚙️  Build PCF Modules (Sequential)') {
         // ──────────────────────────────────────────────
             options {
                 timeout(time: 3, unit: 'HOURS')
@@ -407,27 +407,18 @@ def validateParameters() {
         error "ENVIRONMENT must be 'staging' or 'production', got: ${params.ENVIRONMENT}"
     }
 
-    // PARALLEL_BUILD_LIMIT validation
-    if (!(params.PARALLEL_BUILD_LIMIT ==~ /^\d+$/)) {
-        error "PARALLEL_BUILD_LIMIT must be numeric"
-    }
-    def limit = params.PARALLEL_BUILD_LIMIT.toInteger()
-    if (limit < 1 || limit > 16) {
-        error "PARALLEL_BUILD_LIMIT must be between 1 and 16, got: ${limit}"
-    }
-
     echo """
     ╔══════════════════════════════════════════════╗
     ║         BUILD PARAMETERS VALIDATED           ║
     ╠══════════════════════════════════════════════╣
-    ║ BUILD_NO              : ${params.BUILD_NO.padRight(28)}║
-    ║ MODULE_VER            : ${params.MODULE_VER.padRight(28)}║
-    ║ ENVIRONMENT           : ${params.ENVIRONMENT.padRight(28)}║
-    ║ SKIP_PCF_BUILD        : ${params.SKIP_PCF_BUILD.toString().padRight(28)}║
-    ║ SKIP_SSP_INSTALL      : ${params.SKIP_SSP_INSTALL.toString().padRight(28)}║
-    ║ SKIP_SECURITY_UPDATES : ${params.SKIP_SECURITY_UPDATES.toString().padRight(28)}║
-    ║ DRY_RUN               : ${params.DRY_RUN.toString().padRight(28)}║
-    ║ PARALLEL_BUILD_LIMIT  : ${params.PARALLEL_BUILD_LIMIT.padRight(28)}║
+    ║ BUILD_NO                    : ${params.BUILD_NO.padRight(26)}║
+    ║ MODULE_VER                  : ${params.MODULE_VER.padRight(26)}║
+    ║ ENVIRONMENT                 : ${params.ENVIRONMENT.padRight(26)}║
+    ║ SKIP_PCF_BUILD              : ${params.SKIP_PCF_BUILD.toString().padRight(26)}║
+    ║ SKIP_SSP_INSTALL            : ${params.SKIP_SSP_INSTALL.toString().padRight(26)}║
+    ║ SKIP_SECURITY_UPDATES       : ${params.SKIP_SECURITY_UPDATES.toString().padRight(26)}║
+    ║ DRY_RUN                     : ${params.DRY_RUN.toString().padRight(26)}║
+    ║ CONTINUE_ON_BUILD_FAILURE   : ${params.CONTINUE_ON_BUILD_FAILURE.toString().padRight(26)}║
     ╚══════════════════════════════════════════════╝
     """
 }
@@ -448,8 +439,6 @@ def prepareWorkspace() {
         echo "❌ ERROR: Ansible backup not found at: ${ANSIBLE_BKP_SRC}"
         exit 1
     fi
-
-    deleteDir()
 
     echo "📋 Copying Ansible playbooks from backup..."
     cp -rv ${ANSIBLE_BKP_SRC}/{inventories,playbooks,library} .
@@ -570,34 +559,54 @@ def validateAnsibleSetup() {
 
 def buildPcfModules() {
     def branches = env.PCF_BRANCHES.trim().split(/\s+/).findAll { it }
-    def parallelLimit = params.PARALLEL_BUILD_LIMIT.toInteger()
 
-    echo "⚙️  PCF Build Configuration:"
-    echo "  • Branches: ${branches.size()}"
-    echo "  • Parallel limit: ${parallelLimit}"
-    echo "  • DRY_RUN: ${params.DRY_RUN}"
+    echo """
+    ════════════════════════════════════════════════════════
+    ⚙️  PCF BUILD CONFIGURATION
+    ════════════════════════════════════════════════════════
+    Build Mode      : SEQUENTIAL (one-by-one)
+    Total Branches  : ${branches.size()}
+    DRY_RUN Mode    : ${params.DRY_RUN}
+    Failure Mode    : ${params.CONTINUE_ON_BUILD_FAILURE ? 'Best-Effort (continue on failure)' : 'Fail-Fast (stop on first failure)'}
+    ════════════════════════════════════════════════════════
+    """
 
-    def parallelJobs = [:]
+    def failedBranches = []
+    def successBranches = []
+    def buildResults = [:]
 
-    branches.each { branch ->
-        parallelJobs["Build: ${branch}"] = {
-            stage("Build: ${branch}") {
+    branches.eachWithIndex { branch, index ->
+        def branchNum = index + 1
+        def progressBar = "[${'█'.multiply(branchNum)}${'░'.multiply(branches.size() - branchNum)}] ${branchNum}/${branches.size()}"
+
+        echo """
+        ${progressBar}
+        Building: ${branch}
+        ════════════════════════════════════════════════════════
+        """
+
+        try {
+            timeout(time: 45, unit: 'MINUTES') {
                 retry(2) {
                     sh '''
                     set -euo pipefail
 
                     BRANCH="''' + branch + '''"
+                    BRANCH_NUM=''' + branchNum + '''
+                    TOTAL_BRANCHES=''' + branches.size() + '''
                     LOG_FILE="logs/build_pcf_${BRANCH}_${BUILD_NUMBER}.log"
 
                     echo "=========================================="
-                    echo "PCF Branch Build"
+                    echo "PCF Branch Build [${BRANCH_NUM}/${TOTAL_BRANCHES}]"
                     echo "=========================================="
-                    echo "Branch   : ${BRANCH}"
-                    echo "Build No : ${BUILD_NO}"
-                    echo "Module   : ${MODULE_VER}"
-                    echo "Env      : ${ENVIRONMENT}"
-                    echo "DRY_RUN  : ${DRY_RUN}"
+                    echo "Branch           : ${BRANCH}"
+                    echo "Build Number     : ${BUILD_NO}"
+                    echo "Module Version   : ${MODULE_VER}"
+                    echo "Target Environment : ${ENVIRONMENT}"
+                    echo "DRY_RUN Mode     : ${DRY_RUN}"
+                    echo "Log File         : ${LOG_FILE}"
                     echo "=========================================="
+                    echo ""
 
                     ansible-playbook \\
                         -i ${ANSIBLE_INVENTORY}/hosts.ini \\
@@ -616,19 +625,80 @@ def buildPcfModules() {
 
                     BUILD_RESULT=${PIPESTATUS[0]}
                     if [ ${BUILD_RESULT} -ne 0 ]; then
-                        echo "❌ Build FAILED for branch: ${BRANCH}"
+                        echo ""
+                        echo "❌ Build FAILED for branch: ${BRANCH} [${BRANCH_NUM}/${TOTAL_BRANCHES}]"
+                        echo ""
                         exit ${BUILD_RESULT}
                     fi
 
-                    echo "✅ Build SUCCESS for branch: ${BRANCH}"
+                    echo ""
+                    echo "✅ Build SUCCESS for branch: ${BRANCH} [${BRANCH_NUM}/${TOTAL_BRANCHES}]"
+                    echo ""
                     '''
                 }
+            }
+
+            successBranches.add(branch)
+            buildResults[branch] = '✅ SUCCESS'
+            echo "✅ [${branchNum}/${branches.size()}] ${branch} — COMPLETE"
+            echo ""
+
+        } catch (Exception e) {
+            failedBranches.add(branch)
+            buildResults[branch] = '❌ FAILED'
+            echo "❌ [${branchNum}/${branches.size()}] ${branch} — BUILD FAILED"
+            echo "   Error: ${e.message}"
+            echo ""
+
+            // Decide whether to continue or fail fast
+            if (params.CONTINUE_ON_BUILD_FAILURE) {
+                echo "⚠️  Continuing to next branch (best-effort mode enabled)"
+                echo ""
+            } else {
+                echo "🛑 Stopping build (fail-fast mode)"
+                error("PCF build failed for branch: ${branch}")
             }
         }
     }
 
-    // Run parallel jobs with limit
-    parallel(parallelJobs)
+    // Summary report
+    echo """
+    ════════════════════════════════════════════════════════
+    📊 PCF BUILD SUMMARY
+    ════════════════════════════════════════════════════════
+    Total Branches      : ${branches.size()}
+    Successful Builds   : ${successBranches.size()} ✅
+    Failed Builds       : ${failedBranches.size()} ❌
+    ════════════════════════════════════════════════════════
+    """
+
+    if (buildResults.size() > 0) {
+        echo "Build Results by Branch:"
+        buildResults.each { branch, status ->
+            echo "  ${status} ${branch}"
+        }
+    }
+
+    echo ""
+
+    if (successBranches.size() > 0) {
+        echo "✅ Successful Builds (${successBranches.size()}):"
+        successBranches.each { branch ->
+            echo "   • ${branch}"
+        }
+    }
+
+    if (failedBranches.size() > 0) {
+        echo "❌ Failed Builds (${failedBranches.size()}):"
+        failedBranches.each { branch ->
+            echo "   • ${branch}"
+        }
+        
+        // Fail if any builds failed
+        error("One or more PCF builds failed: ${failedBranches.join(', ')}")
+    }
+
+    echo "════════════════════════════════════════════════════════"
 }
 
 def runSecurityUpdates() {
@@ -761,81 +831,177 @@ def generateBuildSummary() {
 <head>
     <title>Avaya SBCE SSP+PCF Build #${BUILD_NUMBER}</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-        .header { background: #2c3e50; color: white; padding: 20px; border-radius: 5px; }
-        .section { background: white; margin: 20px 0; padding: 15px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 20px; 
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .header { 
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%); 
+            color: white; 
+            padding: 30px; 
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .header h1 { margin: 0 0 15px 0; }
+        .section { 
+            background: white; 
+            margin: 20px 0; 
+            padding: 20px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .section h2 { 
+            color: #2c3e50; 
+            border-bottom: 3px solid #3498db; 
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
         .key { font-weight: bold; color: #2c3e50; }
-        .success { color: #27ae60; }
-        .failure { color: #e74c3c; }
-        .warning { color: #f39c12; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
-        th { background: #ecf0f1; font-weight: bold; }
+        .success { color: #27ae60; font-weight: bold; }
+        .failure { color: #e74c3c; font-weight: bold; }
+        .warning { color: #f39c12; font-weight: bold; }
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-top: 15px; 
+            font-size: 14px;
+        }
+        th, td { 
+            padding: 12px; 
+            text-align: left; 
+            border-bottom: 1px solid #ecf0f1; 
+        }
+        th { 
+            background: linear-gradient(135deg, #ecf0f1 0%, #d5dbdb 100%); 
+            font-weight: bold; 
+            color: #2c3e50;
+        }
+        tr:hover { background-color: #f8f9fa; }
+        ul { margin: 15px 0; padding-left: 20px; }
+        li { margin: 8px 0; }
+        .stage-item { padding: 10px; margin: 8px 0; border-left: 4px solid #3498db; }
+        .stage-success { border-left-color: #27ae60; }
+        .stage-fail { border-left-color: #e74c3c; }
+        .footer { 
+            text-align: center;
+            color: #7f8c8d; 
+            font-size: 12px;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ecf0f1;
+        }
+        .badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            margin: 5px 5px 5px 0;
+        }
+        .badge-success { background-color: #d4edda; color: #155724; }
+        .badge-warning { background-color: #fff3cd; color: #856404; }
+        .badge-danger { background-color: #f8d7da; color: #721c24; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>🏗️  Avaya SBCE SSP + PCF Build Pipeline</h1>
-        <p><span class="key">Build Number:</span> ${BUILD_NUMBER}</p>
-        <p><span class="key">Date/Time:</span> $(date)</p>
-    </div>
+    <div class="container">
+        <div class="header">
+            <h1>🏗️  Avaya SBCE SSP + PCF Build Pipeline</h1>
+            <p>Sequential PCF Build Report</p>
+            <p><span class="key">Build Number:</span> ${BUILD_NUMBER}</p>
+            <p><span class="key">Date/Time:</span> $(date '+%Y-%m-%d %H:%M:%S %Z')</p>
+        </div>
 
-    <div class="section">
-        <h2>📊 Build Summary</h2>
-        <table>
-            <tr>
-                <th>Parameter</th>
-                <th>Value</th>
-            </tr>
-            <tr>
-                <td><span class="key">Environment</span></td>
-                <td>${ENVIRONMENT}</td>
-            </tr>
-            <tr>
-                <td><span class="key">Build Number</span></td>
-                <td>${BUILD_NO}</td>
-            </tr>
-            <tr>
-                <td><span class="key">Module Version</span></td>
-                <td>${MODULE_VER}</td>
-            </tr>
-            <tr>
-                <td><span class="key">Host</span></td>
-                <td>${BUILD_HOSTNAME}</td>
-            </tr>
-            <tr>
-                <td><span class="key">Pipeline Status</span></td>
-                <td class="success">✅ COMPLETE</td>
-            </tr>
-        </table>
-    </div>
+        <div class="section">
+            <h2>📊 Build Summary</h2>
+            <table>
+                <tr>
+                    <th>Parameter</th>
+                    <th>Value</th>
+                </tr>
+                <tr>
+                    <td><span class="key">Environment</span></td>
+                    <td>${ENVIRONMENT}</td>
+                </tr>
+                <tr>
+                    <td><span class="key">Build Number</span></td>
+                    <td>${BUILD_NO}</td>
+                </tr>
+                <tr>
+                    <td><span class="key">Module Version</span></td>
+                    <td>${MODULE_VER}</td>
+                </tr>
+                <tr>
+                    <td><span class="key">Host</span></td>
+                    <td>${BUILD_HOSTNAME}</td>
+                </tr>
+                <tr>
+                    <td><span class="key">Build Mode</span></td>
+                    <td>Sequential (one-by-one)</td>
+                </tr>
+                <tr>
+                    <td><span class="key">Pipeline Status</span></td>
+                    <td><span class="success">✅ COMPLETE</span></td>
+                </tr>
+            </table>
+        </div>
 
-    <div class="section">
-        <h2>📋 Execution Stages</h2>
-        <ul>
-            <li><span class="success">✅</span> Parameter Validation</li>
-            <li><span class="success">✅</span> Workspace Preparation</li>
-            <li><span class="success">✅</span> Health Checks</li>
-            <li><span class="success">✅</span> PCF Branch Discovery</li>
-            <li><span class="success">✅</span> Ansible Setup Validation</li>
-            <li><span class="success">✅</span> PCF Module Builds (if enabled)</li>
-            <li><span class="success">✅</span> Security Updates (if enabled)</li>
-            <li><span class="success">✅</span> SSP Installation (if enabled)</li>
-            <li><span class="success">✅</span> Post-Reboot Validation</li>
-        </ul>
-    </div>
+        <div class="section">
+            <h2>📋 Execution Stages</h2>
+            <div class="stage-item stage-success">
+                <span class="success">✅</span> Parameter Validation
+            </div>
+            <div class="stage-item stage-success">
+                <span class="success">✅</span> Workspace Preparation
+            </div>
+            <div class="stage-item stage-success">
+                <span class="success">✅</span> Health Checks & Connectivity
+            </div>
+            <div class="stage-item stage-success">
+                <span class="success">✅</span> PCF Branch Discovery
+            </div>
+            <div class="stage-item stage-success">
+                <span class="success">✅</span> Ansible Setup Validation
+            </div>
+            <div class="stage-item stage-success">
+                <span class="success">✅</span> PCF Module Builds (Sequential) — if enabled
+            </div>
+            <div class="stage-item stage-success">
+                <span class="success">✅</span> Security Updates — if enabled
+            </div>
+            <div class="stage-item stage-success">
+                <span class="success">✅</span> SSP Installation — if enabled
+            </div>
+            <div class="stage-item stage-success">
+                <span class="success">✅</span> Post-Reboot Validation
+            </div>
+        </div>
 
-    <div class="section">
-        <h2>📁 Output Artifacts</h2>
-        <p>All build logs and artifacts are archived in the Jenkins build workspace.</p>
-        <p><span class="key">Location:</span> logs/ and artifacts/ directories</p>
-    </div>
+        <div class="section">
+            <h2>⚙️  Build Configuration</h2>
+            <p>
+                <span class="badge badge-success">Sequential Build Mode</span>
+                <span class="badge badge-success">DRY_RUN: Off</span>
+                <span class="badge badge-success">Artifact Collection: Enabled</span>
+            </p>
+        </div>
 
-    <hr style="margin-top: 40px; border: none; border-top: 1px solid #ccc;">
-    <p style="color: #7f8c8d; font-size: 12px;">
-        Generated by Avaya SBCE SSP + PCF Build Pipeline<br>
-        Jenkins Build #${BUILD_NUMBER} | $(date)
-    </p>
+        <div class="section">
+            <h2>📁 Output Artifacts</h2>
+            <p>All build logs and artifacts are archived in the Jenkins build workspace.</p>
+            <p><span class="key">Location:</span> logs/ and artifacts/ directories</p>
+            <p><span class="key">Retention Policy:</span> Last 30 builds kept, 10 builds with artifacts</p>
+        </div>
+
+        <div class="footer">
+            <p>Generated by Avaya SBCE SSP + PCF Build Pipeline</p>
+            <p>Jenkins Build #${BUILD_NUMBER} | $(date '+%Y-%m-%d %H:%M:%S %Z')</p>
+        </div>
+    </div>
 </body>
 </html>
 SUMMARY_EOF
@@ -850,7 +1016,7 @@ def calculateDuration() {
         START=${BUILD_START_TIME:-$(date +%s)}
         END=$(date +%s)
         DURATION=$((END - START))
-        printf "%dm %ds" $((DURATION/60)) $((DURATION%60))
+        printf "%02dh %02dm %02ds" $((DURATION/3600)) $(((DURATION%3600)/60)) $((DURATION%60))
         ''',
         returnStdout: true
     ).trim()

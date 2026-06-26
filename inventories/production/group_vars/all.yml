@@ -38,8 +38,8 @@ pcf:
   branch_pattern: "10.2.1.*_orion_int"
   
   # Build configuration
-  build_root: "/opt/pcf"
-  build_temp_root: "/tmp/pcf_builds"
+  build_root: "/home/bambooagent/"
+  build_temp_root: "/home/bambooagent/agent1/xml-data/build-dir/nn/"
   releases_dir: "/root/releases"
   
   # Build retries and timeouts

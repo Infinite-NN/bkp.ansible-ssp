@@ -144,6 +144,7 @@
       failed_when: build_result.rc != 0
       timeout: "{{ pcf.build_timeout_seconds | default(10800) }}"
 
+
     - name: "Display build output"
       debug:
         msg: |
@@ -218,7 +219,7 @@
 
     echo ""
     echo "===== ALL RPM FILES ====="
-    find "{{ build_pcf_build_dir }}" -type f -name "*.rpm" 2>/dev/null || true
+    find "{{ build_pcf_build_dir }}" -type f -name "pcf-*.rpm" 2>/dev/null || true
 
     echo ""
     echo "===== ALL GENERATED FILES ====="
