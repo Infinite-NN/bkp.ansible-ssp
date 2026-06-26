@@ -191,43 +191,29 @@
           - Verify branch exists: ls -la {{ build_pcf_svn_repo }}
       when: not svn_repo_stat.stat.exists
 
-    - name: "Check available disk space for build"
+    - name: Check available disk space for build
       shell: |
-        set -euo pipefail
-    
-        TARGET="{{ build_pcf_build_root | dirname }}"
-    
-        if [ ! -d "$TARGET" ]; then
-          TARGET="/tmp"
-        fi
-
-        df -BG "$TARGET"
-    
-        AVAIL=$(df -BG "$TARGET" | awk 'NR==2 {print $4}' | sed 's/G//')
-    
-        if [ -z "$AVAIL" ]; then
-          echo "0"
-        else
-          echo "$AVAIL"
-        fi
-      args:
-        executable: /bin/bash
+        df -BG {{ builder_work_dir | default('/tmp') }} \
+          | awk 'NR==2 {gsub("G","",$4); print $4}'
       register: build_disk_avail
       changed_when: false
-      check_mode: no
-
-    - name: "Validate disk space (minimum 5GB required)"
+    
+    - name: Show available disk space
+      debug:
+        msg: "Available disk space: {{ build_disk_avail.stdout }} GB"
+    
+    - name: Validate disk space (minimum 5GB required)
       assert:
         that:
-          - build_disk_avail.stdout is defined
-          - build_disk_avail.stdout is defined
-          - build_disk_avail.stdout | int >= 5
+          - (build_disk_avail.stdout | trim | int) >= 5
         fail_msg: |
-          ? INSUFFICIENT DISK SPACE for PCF build
+          ❌ INSUFFICIENT DISK SPACE for PCF build
           Available : {{ build_disk_avail.stdout }}GB
           Required  : 5GB minimum
-          Build Dir : {{ build_pcf_build_root }}
-        success_msg: "? Disk space OK: {{ build_disk_avail.stdout }}GB available"
+          Build Dir : {{ builder_work_dir }}
+        success_msg: |
+          ✅ Disk space validation passed
+          Available : {{ build_disk_avail.stdout }}GB
 
     - name: "Log validation complete"
       shell: |
