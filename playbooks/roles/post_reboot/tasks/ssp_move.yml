@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# Post-Reboot — SSP Move/Extract Task
+# Post-Reboot -- SSP Move/Extract Task
 # Moves or extracts SSP from work directory to install path
 # =============================================================
 
@@ -15,11 +15,11 @@
     - name: "Display ssp_move configuration"
       debug:
         msg: |
-          📦 SSP Move Configuration:
-          ├─ Work Dir    : {{ ssp_work_dir }}
-          ├─ Install Dir : {{ ssp_install_dir }}
-          ├─ Backup      : {{ backup_ssp_before_update | default(true) }}
-          └─ Timeout     : {{ post_reboot_timeout_ssp_move }}s
+          ? SSP Move Configuration:
+          +- Work Dir    : {{ ssp_work_dir }}
+          +- Install Dir : {{ ssp_install_dir }}
+          +- Backup      : {{ backup_ssp_before_update | default(true) }}
+          +- Timeout     : {{ post_reboot_timeout_ssp_move }}s
 
   tags:
     - move
@@ -48,23 +48,23 @@
     - name: "Display discovered sources"
       debug:
         msg: |
-          🔍 Discovered SSP Sources:
-          ├─ Directories: {{ found_ssp_dirs.matched }}
-          │  {{ found_ssp_dirs.files | map(attribute='path') | list | join('\n  ') }}
-          ├─ TGZ Files  : {{ found_tgz_files.matched }}
-          │  {{ found_tgz_files.files | map(attribute='path') | list | join('\n  ') }}
-          └─ Total      : {{ found_ssp_dirs.matched + found_tgz_files.matched }}
+          ? Discovered SSP Sources:
+          +- Directories: {{ found_ssp_dirs.matched }}
+          |  {{ found_ssp_dirs.files | map(attribute='path') | list | join('\n  ') }}
+          +- TGZ Files  : {{ found_tgz_files.matched }}
+          |  {{ found_tgz_files.files | map(attribute='path') | list | join('\n  ') }}
+          +- Total      : {{ found_ssp_dirs.matched + found_tgz_files.matched }}
 
     - name: "Fail if no SSP sources found"
       fail:
         msg: |
-          ❌ No SSP sources found in {{ ssp_work_dir }}
+          ? No SSP sources found in {{ ssp_work_dir }}
           Expected: asbc_* directories or *.tgz files
       when: (found_ssp_dirs.matched | default(0) | int + found_tgz_files.matched | default(0) | int) == 0
 
   rescue:
     - fail:
-        msg: "SSP source discovery failed — {{ ansible_failed_result.msg }}"
+        msg: "SSP source discovery failed -- {{ ansible_failed_result.msg }}"
 
   tags:
     - move
@@ -89,12 +89,12 @@
           BACKUP_DIR="${INSTALL_DIR}.bak.$(date +%Y%m%d_%H%M%S)"
           echo "Backing up existing SSP to $BACKUP_DIR"
           mv "$INSTALL_DIR" "$BACKUP_DIR"
-          echo "✅ Backup created"
+          echo "? Backup created"
         elif [ -f "$INSTALL_DIR" ]; then
-          echo "❌ Install path exists as file, not directory"
+          echo "? Install path exists as file, not directory"
           exit 1
         else
-          echo "✅ Install directory not present (fresh install)"
+          echo "? Install directory not present (fresh install)"
         fi
       args:
         executable: /bin/bash
@@ -114,7 +114,7 @@
         set -euo pipefail
         
         if [ ! -w "{{ ssp_install_dir }}" ]; then
-          echo "❌ Install directory not writable"
+          echo "? Install directory not writable"
           exit 1
         fi
         
@@ -123,13 +123,13 @@
         touch "$TEST_FILE" 2>/dev/null || exit 1
         rm -f "$TEST_FILE"
         
-        echo "✅ Install directory writable"
+        echo "? Install directory writable"
       args:
         executable: /bin/bash
 
   rescue:
     - fail:
-        msg: "Cannot prepare SSP install directory — {{ ansible_failed_result.msg }}"
+        msg: "Cannot prepare SSP install directory -- {{ ansible_failed_result.msg }}"
 
   tags:
     - move
@@ -147,9 +147,9 @@
     - name: "Display selected source"
       debug:
         msg: |
-          📂 Using source:
-          ├─ Path: {{ ssp_src_dir | default('(TGZ extraction)') }}
-          └─ Size: {{ (found_ssp_dirs.files[0].size / 1048576) | round(2) | default('N/A') }}MB
+          ? Using source:
+          +- Path: {{ ssp_src_dir | default('(TGZ extraction)') }}
+          +- Size: {{ (found_ssp_dirs.files[0].size / 1048576) | round(2) | default('N/A') }}MB
       when: ssp_src_dir is defined
 
     - name: "Copy SSP directory using rsync"
@@ -163,12 +163,12 @@
         
         if command -v rsync >/dev/null 2>&1; then
           rsync -aHAX --numeric-ids --delete "$SRC/" "$DST/"
-          echo "✅ rsync copy complete"
+          echo "? rsync copy complete"
         else
           echo "rsync not available, using cp -a"
           mkdir -p "$DST"
           cp -a "$SRC/." "$DST/"
-          echo "✅ cp copy complete"
+          echo "? cp copy complete"
         fi
       args:
         executable: /bin/bash
@@ -186,7 +186,7 @@
   rescue:
     - name: "Log copy failure"
       debug:
-        msg: "Directory copy failed — attempting TGZ extraction instead"
+        msg: "Directory copy failed -- attempting TGZ extraction instead"
       when: found_tgz_files.matched | default(0) | int > 0
 
     - name: "Clear error and continue to TGZ extraction"
@@ -210,10 +210,10 @@
     - name: "Display selected TGZ"
       debug:
         msg: |
-          📦 Extracting TGZ:
-          ├─ File: {{ ssp_src_tgz | basename }}
-          ├─ Size: {{ (found_tgz_files.files[0].size / 1048576) | round(2) }}MB
-          └─ Path: {{ ssp_src_tgz }}
+          ? Extracting TGZ:
+          +- File: {{ ssp_src_tgz | basename }}
+          +- Size: {{ (found_tgz_files.files[0].size / 1048576) | round(2) }}MB
+          +- Path: {{ ssp_src_tgz }}
 
     - name: "Extract TGZ to install directory"
       unarchive:
@@ -239,7 +239,7 @@
 
   rescue:
     - fail:
-        msg: "Both copy and TGZ extraction failed — {{ ansible_failed_result.msg }}"
+        msg: "Both copy and TGZ extraction failed -- {{ ansible_failed_result.msg }}"
 
   tags:
     - move
@@ -270,14 +270,14 @@
     - name: "Display discovered ssp_path"
       debug:
         msg: |
-          ✅ SSP Installation Path:
-          ├─ Path: {{ ssp_path }}
-          ├─ Size: {{ (ssp_path_stat.stat.size / 1048576) | round(2) }}MB
-          └─ Files: {{ ssp_path_stat.stat.nlink }}
+          ? SSP Installation Path:
+          +- Path: {{ ssp_path }}
+          +- Size: {{ (ssp_path_stat.stat.size / 1048576) | round(2) }}MB
+          +- Files: {{ ssp_path_stat.stat.nlink }}
 
   rescue:
     - fail:
-        msg: "Cannot locate SSP directory after copy/extract — {{ ansible_failed_result.msg }}"
+        msg: "Cannot locate SSP directory after copy/extract -- {{ ansible_failed_result.msg }}"
 
   tags:
     - move
@@ -298,7 +298,7 @@
     - name: "Display nested TGZ files"
       debug:
         msg: |
-          📦 Nested TGZ Files Found: {{ nested_tgz_files.matched }}
+          ? Nested TGZ Files Found: {{ nested_tgz_files.matched }}
           {% for file in nested_tgz_files.files[:5] %}
           - {{ file.path | basename }}
           {% endfor %}
@@ -315,7 +315,7 @@
       timeout: "{{ post_reboot_timeout_extract }}"
 
   rescue:
-    - name: "⚠️  Nested TGZ extraction warning"
+    - name: "?  Nested TGZ extraction warning"
       debug:
         msg: "Nested TGZ extraction encountered issues (non-critical)"
 
@@ -354,19 +354,19 @@
     - name: "Display move completion summary"
       debug:
         msg: |
-          ✅ SSP MOVE/EXTRACT COMPLETE
+          ? SSP MOVE/EXTRACT COMPLETE
           
-          📁 Installation Summary:
-          ├─ SSP Path     : {{ ssp_path }}
-          ├─ Files        : {{ ssp_file_count.stdout | trim }}
-          ├─ Status       : Valid and ready
-          └─ Next Phase   : Download security RPMs
+          ? Installation Summary:
+          +- SSP Path     : {{ ssp_path }}
+          +- Files        : {{ ssp_file_count.stdout | trim }}
+          +- Status       : Valid and ready
+          +- Next Phase   : Download security RPMs
           
           Proceeding to RPM updates...
 
   rescue:
     - fail:
-        msg: "SSP structure validation failed — {{ ansible_failed_result.msg }}"
+        msg: "SSP structure validation failed -- {{ ansible_failed_result.msg }}"
 
   tags:
     - move
@@ -385,7 +385,7 @@
 
   rescue:
     - debug:
-        msg: "⚠️  Could not cleanup work directories (non-critical)"
+        msg: "?  Could not cleanup work directories (non-critical)"
 
   tags:
     - move

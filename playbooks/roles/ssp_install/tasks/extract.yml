@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# SSP Install — Extract Task
+# SSP Install -- Extract Task
 # Unpacks TAR archive and locates required files
 # =============================================================
 
@@ -18,10 +18,10 @@
     - name: "Display extraction configuration"
       debug:
         msg: |
-          📦 SSP Extraction Configuration:
-          ├─ TAR File: {{ ssp_work_dir }}/{{ latest_tar }}
-          ├─ Extract to: {{ ssp_work_dir }}
-          └─ Timeout: {{ timeout_extract }}s
+          ? SSP Extraction Configuration:
+          +- TAR File: {{ ssp_work_dir }}/{{ latest_tar }}
+          +- Extract to: {{ ssp_work_dir }}
+          +- Timeout: {{ timeout_extract }}s
 
   tags:
     - extract
@@ -61,7 +61,7 @@
     - name: "Display extraction summary"
       debug:
         msg: |
-          ✅ TAR extraction successful
+          ? TAR extraction successful
           Files extracted: {{ extracted_files.matched }}
           Sample files: {{ extracted_files.files[:5] | map(attribute='path') | list | join('\n') }}
 
@@ -74,7 +74,7 @@
       ignore_errors: yes
 
     - fail:
-        msg: "TAR extraction failed — {{ ansible_failed_result.msg }}"
+        msg: "TAR extraction failed -- {{ ansible_failed_result.msg }}"
 
   tags:
     - extract
@@ -97,15 +97,15 @@
         that:
           - found_tgz_files.matched > 0
         fail_msg: |
-          ❌ No TGZ files found in extracted archive
+          ? No TGZ files found in extracted archive
           Searched: {{ ssp_work_dir }}
           Files found: {{ extracted_files.files | map(attribute='path') | list | join('\n') }}
-        success_msg: "✅ {{ found_tgz_files.matched }} TGZ file(s) found"
+        success_msg: "? {{ found_tgz_files.matched }} TGZ file(s) found"
 
     - name: "Display found TGZ files"
       debug:
         msg: |
-          📂 TGZ Files Found:
+          ? TGZ Files Found:
           {{ found_tgz_files.files | map(attribute='path') | list | join('\n') }}
 
     - name: "Select largest TGZ file (most likely the SSP package)"
@@ -118,8 +118,8 @@
           - tgz_path is defined
           - tgz_path | length > 0
           - tgz_path.endswith('.tgz')
-        fail_msg: "❌ Invalid TGZ path selection: {{ tgz_path }}"
-        success_msg: "✅ TGZ selected: {{ tgz_path | basename }}"
+        fail_msg: "? Invalid TGZ path selection: {{ tgz_path }}"
+        success_msg: "? TGZ selected: {{ tgz_path | basename }}"
 
     - name: "Verify TGZ file exists and is readable"
       stat:
@@ -139,7 +139,7 @@
         
         # Check gzip integrity
         if ! gzip -t "$TGZ_FILE" 2>/dev/null; then
-          echo "❌ TGZ file is corrupted (gzip check failed)"
+          echo "? TGZ file is corrupted (gzip check failed)"
           exit 1
         fi
         
@@ -147,11 +147,11 @@
         FILE_COUNT=$(tar -tzf "$TGZ_FILE" 2>/dev/null | wc -l)
         
         if [ "$FILE_COUNT" -lt 10 ]; then
-          echo "❌ TGZ contains too few files: $FILE_COUNT"
+          echo "? TGZ contains too few files: $FILE_COUNT"
           exit 1
         fi
         
-        echo "✅ TGZ integrity verified: $FILE_COUNT entries"
+        echo "? TGZ integrity verified: $FILE_COUNT entries"
       args:
         executable: /bin/bash
       when: verify_tgz_integrity | default(true) | bool
@@ -165,7 +165,7 @@
       ignore_errors: yes
 
     - fail:
-        msg: "TGZ file location or validation failed — {{ ansible_failed_result.msg }}"
+        msg: "TGZ file location or validation failed -- {{ ansible_failed_result.msg }}"
 
   tags:
     - extract
@@ -188,9 +188,9 @@
         that:
           - found_patchsbc_files.matched > 0
         fail_msg: |
-          ❌ patchSBC script not found in extracted archive
+          ? patchSBC script not found in extracted archive
           Searched: {{ ssp_work_dir }}
-        success_msg: "✅ patchSBC script found"
+        success_msg: "? patchSBC script found"
 
     - name: "Select patchSBC script (use first match, should be unique)"
       set_fact:
@@ -219,12 +219,12 @@
         if [ -z "$SHEBANG" ] || [ "$SHEBANG" != "#!"* ]; then
           # Try to identify script type by extension
           if [[ "$SCRIPT" == *".py" ]]; then
-            echo "✅ Python script (no shebang check required)"
+            echo "? Python script (no shebang check required)"
           else
-            echo "⚠️  No shebang found, but continuing"
+            echo "?  No shebang found, but continuing"
           fi
         else
-          echo "✅ Script shebang: $SHEBANG"
+          echo "? Script shebang: $SHEBANG"
         fi
       args:
         executable: /bin/bash
@@ -233,10 +233,10 @@
     - name: "Display patchSBC details"
       debug:
         msg: |
-          ✅ patchSBC Script Located:
-          ├─ Path: {{ patchsbc_script }}
-          ├─ Size: {{ patchsbc_stat.stat.size }} bytes
-          └─ Exec: {{ patchsbc_stat.stat.mode }}"
+          ? patchSBC Script Located:
+          +- Path: {{ patchsbc_script }}
+          +- Size: {{ patchsbc_stat.stat.size }} bytes
+          +- Exec: {{ patchsbc_stat.stat.mode }}"
 
   rescue:
     - name: "Log patchSBC location failure"
@@ -247,7 +247,7 @@
       ignore_errors: yes
 
     - fail:
-        msg: "patchSBC script location or validation failed — {{ ansible_failed_result.msg }}"
+        msg: "patchSBC script location or validation failed -- {{ ansible_failed_result.msg }}"
 
   tags:
     - extract
@@ -271,15 +271,15 @@
     - name: "Display final summary"
       debug:
         msg: |
-          ✅ EXTRACTION PHASE COMPLETE
+          ? EXTRACTION PHASE COMPLETE
           
-          📦 Extracted Package:
-          ├─ TAR File     : {{ latest_tar }}
-          ├─ Extract Dir  : {{ ssp_work_dir }}
-          ├─ TGZ File     : {{ tgz_path | basename }}
-          ├─ TGZ Size     : {{ (tgz_stat.stat.size / 1048576) | round(2) }}MB
-          ├─ patchSBC     : {{ patchsbc_script | basename }}
-          └─ Status       : Ready for installation
+          ? Extracted Package:
+          +- TAR File     : {{ latest_tar }}
+          +- Extract Dir  : {{ ssp_work_dir }}
+          +- TGZ File     : {{ tgz_path | basename }}
+          +- TGZ Size     : {{ (tgz_stat.stat.size / 1048576) | round(2) }}MB
+          +- patchSBC     : {{ patchsbc_script | basename }}
+          +- Status       : Ready for installation
           
           Next: Run patchSBC installer...
 

@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# Post-Reboot — Update sbc-release Files
+# Post-Reboot -- Update sbc-release Files
 # Updates version numbers, dates, kernel, and SSP directory names
 # Calls sub-task: _update_single_sbc_release.yml
 # =============================================================
@@ -16,10 +16,10 @@
     - name: "Display configuration"
       debug:
         msg: |
-          📝 sbc-release Update Configuration:
-          ├─ SSP Path: {{ ssp_path }}
-          ├─ Search  : {{ ssp_path }}/{{ ssp_new_rpms_dir }}/10.2.1.*
-          └─ Updates : SSP_NUMBER, SSP_OS_Update_Date, sbc=, kernel=
+          ? sbc-release Update Configuration:
+          +- SSP Path: {{ ssp_path }}
+          +- Search  : {{ ssp_path }}/{{ ssp_new_rpms_dir }}/10.2.1.*
+          +- Updates : SSP_NUMBER, SSP_OS_Update_Date, sbc=, kernel=
 
   tags:
     - release
@@ -35,7 +35,7 @@
           - ssp_path is defined
           - ssp_path | length > 0
         fail_msg: "ssp_path is not defined"
-        success_msg: "✅ ssp_path validated"
+        success_msg: "? ssp_path validated"
 
     - name: "Verify SSP exists"
       stat:
@@ -45,7 +45,7 @@
 
   rescue:
     - fail:
-        msg: "Prerequisite validation failed — {{ ansible_failed_result.msg }}"
+        msg: "Prerequisite validation failed -- {{ ansible_failed_result.msg }}"
 
   tags:
     - release
@@ -106,14 +106,14 @@
     - name: "Display calculated values"
       debug:
         msg: |
-          📝 Update Values:
-          ├─ Today's Date    : {{ today_date.stdout | trim }}
-          ├─ Next Month Name : {{ next_month_name.stdout | trim }}
-          └─ Kernel Version  : {{ kernel_version.stdout | trim }}
+          ? Update Values:
+          +- Today's Date    : {{ today_date.stdout | trim }}
+          +- Next Month Name : {{ next_month_name.stdout | trim }}
+          +- Kernel Version  : {{ kernel_version.stdout | trim }}
 
   rescue:
     - fail:
-        msg: "Could not calculate update values — {{ ansible_failed_result.msg }}"
+        msg: "Could not calculate update values -- {{ ansible_failed_result.msg }}"
 
   tags:
     - release
@@ -134,12 +134,12 @@
     - name: "Display found directories"
       debug:
         msg: |
-          📁 Version Directories Found: {{ version_dirs.matched }}
+          ? Version Directories Found: {{ version_dirs.matched }}
           {{ version_dirs.files | map(attribute='path') | map('basename') | list | join('\n') }}
 
     - name: "Warn if no directories found"
       debug:
-        msg: "⚠️  No version directories found — nothing to update"
+        msg: "?  No version directories found -- nothing to update"
       when: version_dirs.matched == 0
 
   tags:
@@ -160,7 +160,7 @@
 
   rescue:
     - fail:
-        msg: "sbc-release update failed — {{ ansible_failed_result.msg }}"
+        msg: "sbc-release update failed -- {{ ansible_failed_result.msg }}"
 
   tags:
     - release
@@ -181,13 +181,13 @@
     - name: "Display completion summary"
       debug:
         msg: |
-          ✅ sbc-release UPDATE COMPLETE
+          ? sbc-release UPDATE COMPLETE
           
-          📝 Summary:
-          ├─ Files Updated : {{ updated_sbc_releases.matched }}
-          ├─ Date Updated  : {{ today_date.stdout | trim }}
-          ├─ Kernel Updated: {{ kernel_version.stdout | trim }}
-          └─ Next Month    : {{ next_month_name.stdout | trim }}
+          ? Summary:
+          +- Files Updated : {{ updated_sbc_releases.matched }}
+          +- Date Updated  : {{ today_date.stdout | trim }}
+          +- Kernel Updated: {{ kernel_version.stdout | trim }}
+          +- Next Month    : {{ next_month_name.stdout | trim }}
           
           Next: Update PCF modules...
 

@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# SSP Install — Download Task
+# SSP Install -- Download Task
 # Fetches and validates SSP package from artifact server
 # =============================================================
 
@@ -18,12 +18,12 @@
     - name: "Display download configuration"
       debug:
         msg: |
-          📥 SSP Download Configuration:
-          ├─ Server   : {{ artifact_server.base_url }}
-          ├─ Path     : {{ artifact_server.ssp_path }}
-          ├─ Timeout  : {{ download_timeout }}s
-          ├─ Retries  : {{ download_max_retries }}
-          └─ Dest     : {{ ssp_work_dir }}
+          ? SSP Download Configuration:
+          +- Server   : {{ artifact_server.base_url }}
+          +- Path     : {{ artifact_server.ssp_path }}
+          +- Timeout  : {{ download_timeout }}s
+          +- Retries  : {{ download_max_retries }}
+          +- Dest     : {{ ssp_work_dir }}
 
   tags:
     - download
@@ -51,20 +51,20 @@
         that:
           - ssp_index_page.content | length > 0
           - ssp_index_page.status == 200
-        fail_msg: "❌ Empty response from artifact server"
-        success_msg: "✅ Artifact server responsive"
+        fail_msg: "? Empty response from artifact server"
+        success_msg: "? Artifact server responsive"
 
   rescue:
     - name: "Log server accessibility failure"
       lineinfile:
         path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
-        line: "[DOWNLOAD][SERVER_ERROR] Cannot reach {{ artifact_server.base_url }} — {{ ansible_failed_result.msg | default('Unknown') }}"
+        line: "[DOWNLOAD][SERVER_ERROR] Cannot reach {{ artifact_server.base_url }} -- {{ ansible_failed_result.msg | default('Unknown') }}"
         create: yes
       ignore_errors: yes
 
     - fail:
         msg: |
-          ❌ Cannot reach artifact server: {{ artifact_server.base_url }}
+          ? Cannot reach artifact server: {{ artifact_server.base_url }}
           Error: {{ ansible_failed_result.msg }}
 
   tags:
@@ -90,18 +90,18 @@
           - latest_version | length > 0
           - latest_version is match('^10\\.2\\.1')
         fail_msg: |
-          ❌ No SSP version matching pattern detected
+          ? No SSP version matching pattern detected
           Pattern: {{ ssp_version_pattern }}
           Server response (first 2000 chars):
           {{ ssp_index_page.content[:2000] }}
-        success_msg: "✅ SSP Version detected: {{ latest_version }}"
+        success_msg: "? SSP Version detected: {{ latest_version }}"
 
     - name: "Display detected version"
       debug:
         msg: |
-          🔍 Detected Versions:
-          ├─ Available: {{ detected_versions | join(', ') }}
-          └─ Selected : {{ latest_version }}
+          ? Detected Versions:
+          +- Available: {{ detected_versions | join(', ') }}
+          +- Selected : {{ latest_version }}
 
   rescue:
     - name: "Log version detection failure"
@@ -139,13 +139,13 @@
       assert:
         that:
           - archive_index_page.content | length > 0
-        fail_msg: "❌ Archive page is empty"
-        success_msg: "✅ Archive listing retrieved"
+        fail_msg: "? Archive page is empty"
+        success_msg: "? Archive listing retrieved"
 
   rescue:
     - fail:
         msg: |
-          ❌ Cannot retrieve archive listing for version: {{ latest_version }}
+          ? Cannot retrieve archive listing for version: {{ latest_version }}
           URL: {{ artifact_server.base_url }}/{{ artifact_server.ssp_path }}/{{ latest_version }}/archive/
 
   tags:
@@ -171,17 +171,17 @@
           - latest_tar | length > 0
           - latest_tar is match('.*\\.tar$')
         fail_msg: |
-          ❌ No TAR files found matching pattern: {{ ssp_tar_pattern }}
+          ? No TAR files found matching pattern: {{ ssp_tar_pattern }}
           Archive page content (first 2000 chars):
           {{ archive_index_page.content[:2000] }}
-        success_msg: "✅ TAR file detected: {{ latest_tar }}"
+        success_msg: "? TAR file detected: {{ latest_tar }}"
 
     - name: "Display TAR file selection"
       debug:
         msg: |
-          📦 TAR File Selection:
-          ├─ Available: {{ tar_files_found | join(', ') if tar_files_found | length <= 5 else tar_files_found[:3] | join(', ') + '... and ' + ((tar_files_found | length) - 3) | string + ' more' }}
-          └─ Selected : {{ latest_tar }}
+          ? TAR File Selection:
+          +- Available: {{ tar_files_found | join(', ') if tar_files_found | length <= 5 else tar_files_found[:3] | join(', ') + '... and ' + ((tar_files_found | length) - 3) | string + ' more' }}
+          +- Selected : {{ latest_tar }}
 
   rescue:
     - name: "Log TAR detection failure"
@@ -220,7 +220,7 @@
         DEST="{{ ssp_work_dir }}/{{ latest_tar }}"
         URL="{{ artifact_server.base_url }}/{{ artifact_server.ssp_path }}/{{ latest_version }}/archive/{{ latest_tar }}"
         
-        echo "⬇️  Downloading: {{ latest_tar }}"
+        echo "?  Downloading: {{ latest_tar }}"
         echo "URL: $URL"
         echo "Destination: $DEST"
         echo ""
@@ -242,18 +242,18 @@
         CURL_RC=$?
         
         if [ $CURL_RC -ne 0 ]; then
-          echo "❌ Download failed with curl rc=$CURL_RC"
+          echo "? Download failed with curl rc=$CURL_RC"
           exit $CURL_RC
         fi
 
         # Verify file was created
         if [ ! -f "$DEST" ]; then
-          echo "❌ Download file not found after curl"
+          echo "? Download file not found after curl"
           exit 1
         fi
 
         FILE_SIZE=$(stat -c%s "$DEST")
-        echo "✅ Download complete: $((FILE_SIZE / 1048576))MB"
+        echo "? Download complete: $((FILE_SIZE / 1048576))MB"
       args:
         executable: /bin/bash
       register: download_result
@@ -276,7 +276,7 @@
 
     - fail:
         msg: |
-          ❌ TAR download failed
+          ? TAR download failed
           URL: {{ artifact_server.base_url }}/{{ artifact_server.ssp_path }}/{{ latest_version }}/archive/{{ latest_tar }}
           Error: {{ ansible_failed_result.msg }}
 
@@ -301,12 +301,12 @@
           - tar_stat.stat.exists
           - tar_stat.stat.size >= ssp_tar_min_size_bytes | int
         fail_msg: |
-          ❌ TAR file validation failed
+          ? TAR file validation failed
           File exists: {{ tar_stat.stat.exists }}
           File size  : {{ tar_stat.stat.size | default(0) }} bytes
           Minimum    : {{ ssp_tar_min_size_bytes }} bytes
         success_msg: |
-          ✅ TAR file valid
+          ? TAR file valid
           Size: {{ (tar_stat.stat.size / 1048576) | round(2) }}MB
           MD5 : {{ tar_stat.stat.checksum }}
 
@@ -318,13 +318,13 @@
         
         echo "Checking TAR file integrity..."
         if ! tar -tf "$TAR_FILE" > /dev/null 2>&1; then
-          echo "❌ TAR file is corrupted"
+          echo "? TAR file is corrupted"
           exit 1
         fi
         
         # Count files in TAR
         FILE_COUNT=$(tar -tf "$TAR_FILE" | wc -l)
-        echo "✅ TAR integrity verified: $FILE_COUNT files"
+        echo "? TAR integrity verified: $FILE_COUNT files"
       args:
         executable: /bin/bash
 
@@ -347,7 +347,7 @@
       ignore_errors: yes
 
     - fail:
-        msg: "TAR file validation failed — {{ ansible_failed_result.msg }}"
+        msg: "TAR file validation failed -- {{ ansible_failed_result.msg }}"
 
   tags:
     - download
@@ -358,13 +358,13 @@
 - name: "[DOWNLOAD] Final logging"
   debug:
     msg: |
-      ✅ DOWNLOAD PHASE COMPLETE
+      ? DOWNLOAD PHASE COMPLETE
       
-      📦 Package Information:
-      ├─ Version : {{ latest_version }}
-      ├─ Filename: {{ latest_tar }}
-      ├─ Location: {{ ssp_work_dir }}/{{ latest_tar }}
-      └─ Status  : Ready for extraction
+      ? Package Information:
+      +- Version : {{ latest_version }}
+      +- Filename: {{ latest_tar }}
+      +- Location: {{ ssp_work_dir }}/{{ latest_tar }}
+      +- Status  : Ready for extraction
       
       Next: Extract package...
   tags:

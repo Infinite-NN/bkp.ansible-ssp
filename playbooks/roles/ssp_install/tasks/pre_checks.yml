@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# SSP Install — Pre-installation Checks
+# SSP Install -- Pre-installation Checks
 # Validates system prerequisites before SSP installation
 # =============================================================
 
@@ -27,7 +27,7 @@
     - pre_checks
     - always
 
-- name: "[PRE] Aggressive cleanup — Remove old artifacts"
+- name: "[PRE] Aggressive cleanup -- Remove old artifacts"
   block:
     - name: "Define cleanup targets"
       set_fact:
@@ -64,7 +64,7 @@
           if [ "$COUNT" -gt 0 ]; then
             echo "Removing $COUNT ${DESC} from $TARGET"
             find "$TARGET" -maxdepth 1 -type d -name "$PATTERN" -exec rm -rf {} + 2>/dev/null || true
-            echo "✅ Removed"
+            echo "? Removed"
           fi
         fi
       loop: "{{ cleanup_dirs }}"
@@ -84,7 +84,7 @@
           if [ "$COUNT" -gt 0 ]; then
             echo "Removing $COUNT ${DESC} from $TARGET"
             find "$TARGET" -maxdepth 2 -type f -name "$PATTERN" -delete 2>/dev/null || true
-            echo "✅ Removed"
+            echo "? Removed"
           fi
         fi
       loop: "{{ cleanup_files }}"
@@ -111,7 +111,7 @@
       shell: |
         find /usr/local/ipcs/temp -name "*.lock" -delete 2>/dev/null || true
         find /tmp -maxdepth 1 -name "*.lock" -delete 2>/dev/null || true
-        echo "✅ Stale locks removed"
+        echo "? Stale locks removed"
       args:
         executable: /bin/bash
       changed_when: true
@@ -120,11 +120,11 @@
     - name: "Log cleanup completion"
       lineinfile:
         path: "{{ ssp_pre_check_log }}"
-        line: "✅ Cleanup phase complete — {{ ansible_date_time.iso8601 }}"
+        line: "? Cleanup phase complete -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
 
   rescue:
-    - name: "⚠️  Cleanup warning (non-blocking)"
+    - name: "?  Cleanup warning (non-blocking)"
       debug:
         msg: "Cleanup encountered issues but continuing with validation..."
 
@@ -160,13 +160,13 @@
     - name: "Display available binaries"
       debug:
         msg: |
-          📦 System Binaries:
-          ├─ dnf      : {{ dnf_path.stdout | trim }}
-          ├─ rpm      : {{ rpm_path.stdout | trim }}
-          ├─ curl     : {{ curl_path.stdout | trim }}
-          ├─ tar      : {{ tar_path.stdout | trim }}
-          ├─ md5sum   : {{ md5sum_path.stdout | trim }}
-          └─ systemctl: {{ systemctl_path.stdout | trim }}
+          ? System Binaries:
+          +- dnf      : {{ dnf_path.stdout | trim }}
+          +- rpm      : {{ rpm_path.stdout | trim }}
+          +- curl     : {{ curl_path.stdout | trim }}
+          +- tar      : {{ tar_path.stdout | trim }}
+          +- md5sum   : {{ md5sum_path.stdout | trim }}
+          +- systemctl: {{ systemctl_path.stdout | trim }}
 
     - name: "Validate all required binaries exist"
       assert:
@@ -178,7 +178,7 @@
           - md5sum_path.rc == 0
           - systemctl_path.rc == 0
         fail_msg: |
-          ❌ One or more required system binaries are missing
+          ? One or more required system binaries are missing
           Please install missing packages and retry
 
   rescue:
@@ -227,7 +227,7 @@
         that:
           - opt_disk_available.stdout | int >= min_opt_disk_gb | int
         fail_msg: |
-          ❌ INSUFFICIENT DISK SPACE on /opt
+          ? INSUFFICIENT DISK SPACE on /opt
           Available : {{ opt_disk_available.stdout }}GB
           Required  : {{ min_opt_disk_gb }}GB minimum
           
@@ -235,17 +235,17 @@
           1. Check disk usage: df -h /opt
           2. Find large files: du -sh /opt/* | sort -hr
           3. Remove old backups: rm -rf /opt/ssp*.bak.*
-        success_msg: "✅ /opt disk OK: {{ opt_disk_available.stdout }}GB available (min: {{ min_opt_disk_gb }}GB)"
+        success_msg: "? /opt disk OK: {{ opt_disk_available.stdout }}GB available (min: {{ min_opt_disk_gb }}GB)"
 
     - name: "Validate / disk space"
       assert:
         that:
           - root_disk_available.stdout | int >= min_root_disk_gb | int
         fail_msg: |
-          ❌ INSUFFICIENT DISK SPACE on /
+          ? INSUFFICIENT DISK SPACE on /
           Available : {{ root_disk_available.stdout }}GB
           Required  : {{ min_root_disk_gb }}GB minimum
-        success_msg: "✅ / disk OK: {{ root_disk_available.stdout }}GB available"
+        success_msg: "? / disk OK: {{ root_disk_available.stdout }}GB available"
 
     - name: "Display top disk consumers"
       shell: |
@@ -260,7 +260,7 @@
 
   rescue:
     - fail:
-        msg: "Disk space validation failed — insufficient space for SSP installation"
+        msg: "Disk space validation failed -- insufficient space for SSP installation"
 
   tags:
     - pre_checks
@@ -285,9 +285,9 @@
           echo "Found stuck patchSBC processes: $PIDS"
           echo "$PIDS" | xargs kill -9 2>/dev/null || true
           sleep 2
-          echo "✅ Stuck processes terminated"
+          echo "? Stuck processes terminated"
         else
-          echo "✅ No stuck processes found"
+          echo "? No stuck processes found"
         fi
       args:
         executable: /bin/bash
@@ -330,10 +330,10 @@
         that:
           - repo_check.rc == 0
         fail_msg: |
-          ⚠️  Repository access check warning
+          ?  Repository access check warning
           Some repositories may be unavailable
           Run: dnf repolist to diagnose
-        success_msg: "✅ Repository check passed"
+        success_msg: "? Repository check passed"
 
   tags:
     - pre_checks
@@ -359,7 +359,7 @@
 
   rescue:
     - debug:
-        msg: "⚠️  IPCS status check skipped (may be normal)"
+        msg: "?  IPCS status check skipped (may be normal)"
 
   tags:
     - pre_checks
@@ -375,11 +375,11 @@
           ============================================================
           Phase 2: Validation Results
           ============================================================
-          Disk /opt    : ✅ {{ opt_disk_available.stdout }}GB available
-          Disk /       : ✅ {{ root_disk_available.stdout }}GB available
-          Binaries     : ✅ All required binaries found
-          Processes    : ✅ Cleanup complete
-          Repositories : ✅ Accessible
+          Disk /opt    : ? {{ opt_disk_available.stdout }}GB available
+          Disk /       : ? {{ root_disk_available.stdout }}GB available
+          Binaries     : ? All required binaries found
+          Processes    : ? Cleanup complete
+          Repositories : ? Accessible
           
           ============================================================
           Completion: {{ ansible_date_time.iso8601 }}
@@ -389,15 +389,15 @@
     - name: "Display pre-check summary"
       debug:
         msg: |
-          ✅ ALL PRE-INSTALLATION CHECKS PASSED
+          ? ALL PRE-INSTALLATION CHECKS PASSED
           
-          📊 System Status:
-          ├─ /opt disk      : {{ opt_disk_available.stdout }}GB
-          ├─ / disk         : {{ root_disk_available.stdout }}GB
-          ├─ Binaries       : ✅
-          ├─ Processes      : ✅ Cleaned
-          ├─ Repositories   : ✅
-          └─ Ready for SSP  : ✅
+          ? System Status:
+          +- /opt disk      : {{ opt_disk_available.stdout }}GB
+          +- / disk         : {{ root_disk_available.stdout }}GB
+          +- Binaries       : ?
+          +- Processes      : ? Cleaned
+          +- Repositories   : ?
+          +- Ready for SSP  : ?
           
           Proceeding with installation...
 

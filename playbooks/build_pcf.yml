@@ -26,7 +26,7 @@
     pcf_build_log: "/var/log/pcf_build_{{ pcf_build_no }}_{{ ansible_date_time.iso8601_basic_short }}.log"
 
   pre_tasks:
-    - name: "🔍 Validate PCF build parameters"
+    - name: "? Validate PCF build parameters"
       block:
         - name: "Validate branch parameter"
           assert:
@@ -34,8 +34,8 @@
               - pcf_branch is defined
               - pcf_branch | length > 0
               - pcf_branch is regex('^10\.2\.1\.[0-9]+_orion_int$')
-            fail_msg: "❌ Invalid PCF branch: {{ pcf_branch }}"
-            success_msg: "✅ Branch validation passed: {{ pcf_branch }}"
+            fail_msg: "? Invalid PCF branch: {{ pcf_branch }}"
+            success_msg: "? Branch validation passed: {{ pcf_branch }}"
           tags:
             - validate
             - always
@@ -45,8 +45,8 @@
             that:
               - pcf_build_no is defined
               - pcf_build_no | string | regex_search('^[0-9]+$')
-            fail_msg: "❌ Build number must be numeric: {{ pcf_build_no }}"
-            success_msg: "✅ Build number validation passed: {{ pcf_build_no }}"
+            fail_msg: "? Build number must be numeric: {{ pcf_build_no }}"
+            success_msg: "? Build number validation passed: {{ pcf_build_no }}"
           tags:
             - validate
             - always
@@ -56,24 +56,24 @@
             that:
               - pcf_module_ver is defined
               - pcf_module_ver | regex_search('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
-            fail_msg: "❌ Invalid module version format: {{ pcf_module_ver }} (expected x.x.x.xxxxxx)"
-            success_msg: "✅ Module version validation passed: {{ pcf_module_ver }}"
+            fail_msg: "? Invalid module version format: {{ pcf_module_ver }} (expected x.x.x.xxxxxx)"
+            success_msg: "? Module version validation passed: {{ pcf_module_ver }}"
 
         - name: "Display build configuration"
           debug:
             msg: |
-              ╔═══════════════════════════════════╗
-              ║    PCF BUILD CONFIGURATION        ║
-              ╠═══════════════════════════════════╣
-              ║ Branch      : {{ pcf_branch }}
-              ║ Build No    : {{ pcf_build_no }}
-              ║ Module Ver  : {{ pcf_module_ver }}
-              ║ Environment : {{ pcf_environment }}
-              ║ Target Host : {{ inventory_hostname }}
-              ║ Build Root  : {{ pcf_build_root }}
-              ╚═══════════════════════════════════╝
+              ?????????????????????????????????????
+              ?    PCF BUILD CONFIGURATION        ?
+              ?????????????????????????????????????
+              ? Branch      : {{ pcf_branch }}
+              ? Build No    : {{ pcf_build_no }}
+              ? Module Ver  : {{ pcf_module_ver }}
+              ? Environment : {{ pcf_environment }}
+              ? Target Host : {{ inventory_hostname }}
+              ? Build Root  : {{ pcf_build_root }}
+              ?????????????????????????????????????
 
-    - name: "📁 Prepare build workspace"
+    - name: "? Prepare build workspace"
       block:
         - name: "Create build directories"
           file:
@@ -90,7 +90,7 @@
         - name: "Clean previous build artifacts (safe)"
           shell: |
             find {{ pcf_build_root }} -type f -mtime +7 -delete || true
-            echo "✅ Old build artifacts cleaned"
+            echo "? Old build artifacts cleaned"
           changed_when: true
           register: cleanup_result
           failed_when: false
@@ -113,7 +113,7 @@
         build_pcf_log: "{{ pcf_build_log }}"
 
   post_tasks:
-    - name: "✅ PCF Build Post-Tasks"
+    - name: "? PCF Build Post-Tasks"
       block:
         - name: "Verify build output"
           stat:
@@ -130,7 +130,7 @@
         - name: "Display build artifacts"
           debug:
             msg: |
-              ✅ PCF BUILD COMPLETE
+              ? PCF BUILD COMPLETE
               Generated {{ generated_rpms.matched }} RPM(s):
               {{ generated_rpms.files | map(attribute='path') | list | join('\n') }}
 
@@ -156,9 +156,9 @@
             mode: '0644'
 
       rescue:
-        - name: "⚠️  Build verification warning"
+        - name: "?  Build verification warning"
           debug:
-            msg: "⚠️  Post-build verification encountered issues (non-blocking)"
+            msg: "?  Post-build verification encountered issues (non-blocking)"
 
   handlers:
     - name: "restart pcf service"

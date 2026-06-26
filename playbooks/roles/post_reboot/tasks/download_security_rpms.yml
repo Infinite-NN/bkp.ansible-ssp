@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# Post-Reboot — Download Security RPMs from RHEL Repositories
+# Post-Reboot -- Download Security RPMs from RHEL Repositories
 # Fetches critical and security updates for BaseOS + AppStream
 # =============================================================
 
@@ -15,11 +15,11 @@
     - name: "Display repository configuration"
       debug:
         msg: |
-          📦 Security RPM Download Configuration:
-          ├─ BaseOS Repo      : {{ dnf_repo_baseos }}
-          ├─ AppStream Repo   : {{ dnf_repo_appstream }}
-          ├─ Destination Base : {{ repo_base }}
-          └─ Timeout          : {{ download_security_rpms_timeout | default(1200) }}s
+          ? Security RPM Download Configuration:
+          +- BaseOS Repo      : {{ dnf_repo_baseos }}
+          +- AppStream Repo   : {{ dnf_repo_appstream }}
+          +- Destination Base : {{ repo_base }}
+          +- Timeout          : {{ download_security_rpms_timeout | default(1200) }}s
 
   tags:
     - sec_rpm
@@ -46,14 +46,14 @@
     - name: "Display created structure"
       debug:
         msg: |
-          ✅ Directory structure created:
-          ├─ {{ repo_baseos_path }}
-          ├─ {{ repo_appstream_path }}
-          └─ {{ repo_archive_base }}/{BaseOS,AppStream}
+          ? Directory structure created:
+          +- {{ repo_baseos_path }}
+          +- {{ repo_appstream_path }}
+          +- {{ repo_archive_base }}/{BaseOS,AppStream}
 
   rescue:
     - fail:
-        msg: "Cannot create repository directories — {{ ansible_failed_result.msg }}"
+        msg: "Cannot create repository directories -- {{ ansible_failed_result.msg }}"
 
   tags:
     - sec_rpm
@@ -78,9 +78,9 @@
     - name: "Display repo status"
       debug:
         msg: |
-          📋 Repository Status:
-          ├─ BaseOS   : {{ 'ENABLED' if baseos_repo_check.rc == 0 else 'NOT FOUND (may still work)' }}
-          └─ AppStream: {{ 'ENABLED' if appstream_repo_check.rc == 0 else 'NOT FOUND (may still work)' }}
+          ? Repository Status:
+          +- BaseOS   : {{ 'ENABLED' if baseos_repo_check.rc == 0 else 'NOT FOUND (may still work)' }}
+          +- AppStream: {{ 'ENABLED' if appstream_repo_check.rc == 0 else 'NOT FOUND (may still work)' }}
 
     - name: "List all enabled repositories"
       shell: dnf repolist --enabled | head -10
@@ -94,7 +94,7 @@
 
   rescue:
     - debug:
-        msg: "⚠️  Repository validation warning (will attempt download anyway)"
+        msg: "?  Repository validation warning (will attempt download anyway)"
 
   tags:
     - sec_rpm
@@ -117,7 +117,7 @@
         echo "Building DNF cache..."
         dnf makecache 2>&1 | tail -5
         
-        echo "✅ DNF cache rebuilt"
+        echo "? DNF cache rebuilt"
       args:
         executable: /bin/bash
       register: dnf_makecache
@@ -131,7 +131,7 @@
 
   rescue:
     - debug:
-        msg: "⚠️  DNF cache refresh warning (continuing with download)"
+        msg: "?  DNF cache refresh warning (continuing with download)"
 
   tags:
     - sec_rpm
@@ -148,7 +148,7 @@
         DEST="{{ repo_baseos_path }}"
         REPO="{{ dnf_repo_baseos }}"
 
-        echo "⬇️  Downloading BaseOS security updates..."
+        echo "?  Downloading BaseOS security updates..."
         echo "Destination: $DEST"
         echo "Repository : $REPO"
         echo ""
@@ -171,9 +171,9 @@
         DOWNLOADED=$((COUNT_AFTER - COUNT_BEFORE))
 
         if [ $DOWNLOADED -gt 0 ]; then
-          echo "✅ Downloaded $DOWNLOADED BaseOS security RPM(s)"
+          echo "? Downloaded $DOWNLOADED BaseOS security RPM(s)"
         else
-          echo "⚠️  No new BaseOS security RPMs downloaded (may already be latest)"
+          echo "?  No new BaseOS security RPMs downloaded (may already be latest)"
         fi
 
         find "$DEST" -name "*.rpm" -type f | wc -l | xargs echo "Total BaseOS RPMs: "
@@ -198,7 +198,7 @@
 
   rescue:
     - debug:
-        msg: "⚠️  BaseOS download encountered issues (will continue with AppStream)"
+        msg: "?  BaseOS download encountered issues (will continue with AppStream)"
 
   tags:
     - sec_rpm
@@ -215,7 +215,7 @@
         DEST="{{ repo_appstream_path }}"
         REPO="{{ dnf_repo_appstream }}"
 
-        echo "⬇️  Downloading AppStream security updates..."
+        echo "?  Downloading AppStream security updates..."
         echo "Destination: $DEST"
         echo "Repository : $REPO"
         echo ""
@@ -236,9 +236,9 @@
         DOWNLOADED=$((COUNT_AFTER - COUNT_BEFORE))
 
         if [ $DOWNLOADED -gt 0 ]; then
-          echo "✅ Downloaded $DOWNLOADED AppStream security RPM(s)"
+          echo "? Downloaded $DOWNLOADED AppStream security RPM(s)"
         else
-          echo "⚠️  No new AppStream security RPMs downloaded"
+          echo "?  No new AppStream security RPMs downloaded"
         fi
 
         find "$DEST" -name "*.rpm" -type f | wc -l | xargs echo "Total AppStream RPMs: "
@@ -263,7 +263,7 @@
 
   rescue:
     - debug:
-        msg: "⚠️  AppStream download encountered issues (continuing)"
+        msg: "?  AppStream download encountered issues (continuing)"
 
   tags:
     - sec_rpm
@@ -337,12 +337,12 @@
     - name: "Display final summary"
       debug:
         msg: |
-          ✅ SECURITY RPM DOWNLOAD COMPLETE
+          ? SECURITY RPM DOWNLOAD COMPLETE
           
-          📦 RPM Summary:
-          ├─ BaseOS   : {{ sec_rpm_baseos_count }}
-          ├─ AppStream: {{ sec_rpm_appstream_count }}
-          └─ Total    : {{ sec_rpm_total_count }}
+          ? RPM Summary:
+          +- BaseOS   : {{ sec_rpm_baseos_count }}
+          +- AppStream: {{ sec_rpm_appstream_count }}
+          +- Total    : {{ sec_rpm_total_count }}
           
           Next: Process downloaded RPMs...
 

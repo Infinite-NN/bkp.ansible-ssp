@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# Common Role — Shared Utilities for All Roles
+# Common Role -- Shared Utilities for All Roles
 # Provides: logging, system validation, directory mgmt, services
 # Used by: all other roles in the pipeline
 # =============================================================
@@ -8,10 +8,10 @@
 - name: "[COMMON] Common role initialization"
   debug:
     msg: |
-      🔧 Common Role Loaded
-      ├─ Purpose : Shared utilities & validation
-      ├─ Target  : {{ inventory_hostname }}
-      └─ Time    : {{ ansible_date_time.iso8601 }}
+      ? Common Role Loaded
+      +- Purpose : Shared utilities & validation
+      +- Target  : {{ inventory_hostname }}
+      +- Time    : {{ ansible_date_time.iso8601 }}
   tags:
     - common
     - always
@@ -73,7 +73,7 @@
     - name: "Display system baseline"
       debug:
         msg: |
-          📊 System Baseline:
+          ? System Baseline:
           {{ system_baseline }}
 
     - name: "Store baseline for later use"
@@ -122,19 +122,19 @@
           - disk_root_avail.stdout | int >= 1
           - mem_avail.stdout | int >= 512
         fail_msg: |
-          ❌ SYSTEM RESOURCES INSUFFICIENT
+          ? SYSTEM RESOURCES INSUFFICIENT
           /opt Free     : {{ disk_opt_avail.stdout | int }}GB (minimum: 2GB)
           / Free        : {{ disk_root_avail.stdout | int }}GB (minimum: 1GB)
           Memory Free   : {{ mem_avail.stdout | int }}MB (minimum: 512MB)
         success_msg: |
-          ✅ System resources adequate
+          ? System resources adequate
           /opt Free     : {{ disk_opt_avail.stdout | int }}GB
           / Free        : {{ disk_root_avail.stdout | int }}GB
           Memory Free   : {{ mem_avail.stdout | int }}MB
 
   rescue:
     - fail:
-        msg: "System prerequisite validation failed — insufficient resources"
+        msg: "System prerequisite validation failed -- insufficient resources"
 
   tags:
     - common
@@ -169,7 +169,7 @@
     - name: "Report missing commands"
       fail:
         msg: |
-          ❌ MISSING REQUIRED COMMAND: {{ item.item }}
+          ? MISSING REQUIRED COMMAND: {{ item.item }}
           Please install this command and retry.
       when: item.rc != 0
       loop: "{{ cmd_check.results }}"
@@ -178,7 +178,7 @@
     - name: "Display available commands"
       debug:
         msg: |
-          ✅ All required commands available:
+          ? All required commands available:
           {{ cmd_check.results | selectattr('rc', 'equalto', 0) | map(attribute='item') | list | join(', ') }}
 
   tags:
@@ -232,11 +232,11 @@
     - name: "Display Ansible configuration"
       debug:
         msg: |
-          ⚙️  Ansible Configuration:
-          ├─ Version      : {{ ansible_version.full }}
-          ├─ Inventory    : {{ inventory_hostname }}
-          ├─ Become       : {{ ansible_become | default(false) }}
-          └─ Timeout      : {{ ansible_timeout | default(10) }}s
+          ?  Ansible Configuration:
+          +- Version      : {{ ansible_version.full }}
+          +- Inventory    : {{ inventory_hostname }}
+          +- Become       : {{ ansible_become | default(false) }}
+          +- Timeout      : {{ ansible_timeout | default(10) }}s
 
   tags:
     - common
@@ -290,14 +290,14 @@
     - name: "Display network status"
       debug:
         msg: |
-          🌐 Network Status:
-          ├─ DNS Resolution: {{ 'OK' if network_check.rc == 0 else 'FAILED' }}
-          ├─ HTTP Access   : {{ 'OK' if network_check.rc == 0 else 'FAILED' }}
-          └─ Status        : {{ 'Connected' if network_check.rc == 0 else 'Offline (may be OK)' }}
+          ? Network Status:
+          +- DNS Resolution: {{ 'OK' if network_check.rc == 0 else 'FAILED' }}
+          +- HTTP Access   : {{ 'OK' if network_check.rc == 0 else 'FAILED' }}
+          +- Status        : {{ 'Connected' if network_check.rc == 0 else 'Offline (may be OK)' }}
 
   rescue:
     - debug:
-        msg: "⚠️  Network connectivity check skipped (non-critical)"
+        msg: "?  Network connectivity check skipped (non-critical)"
 
   tags:
     - common
@@ -308,7 +308,7 @@
 - name: "[COMMON] Log common role completion"
   lineinfile:
     path: "{{ log_dir }}/pipeline_{{ ansible_date_time.date }}.log"
-    line: "[COMMON][READY] Common role initialization complete — {{ ansible_date_time.iso8601 }}"
+    line: "[COMMON][READY] Common role initialization complete -- {{ ansible_date_time.iso8601 }}"
     insertafter: EOF
   ignore_errors: yes
   tags:

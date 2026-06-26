@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# Build PCF — Validation Task (FINAL FIXED VERSION)
+# Build PCF -- Validation Task (FINAL FIXED VERSION)
 # =============================================================
 
 - name: "[VALIDATE] Initialize build log"
@@ -35,12 +35,12 @@
 
     - name: "Confirm log file created"
       debug:
-        msg: "✅ Log file initialized: {{ build_pcf_log }}"
+        msg: "? Log file initialized: {{ build_pcf_log }}"
 
   rescue:
     - name: "Warn if log initialization fails"
       debug:
-        msg: "⚠️  Could not initialize log file at {{ build_pcf_log }} — continuing without logging"
+        msg: "?  Could not initialize log file at {{ build_pcf_log }} -- continuing without logging"
 
   tags:
     - validate
@@ -67,48 +67,48 @@
           - build_pcf_build_root is defined
           - build_pcf_releases_dir is defined
         fail_msg: |
-          ❌ VALIDATION FAILED: Missing required build variables
+          ? VALIDATION FAILED: Missing required build variables
           build_pcf_branch    : {{ build_pcf_branch | default('UNDEFINED') }}
           build_pcf_build_no  : {{ build_pcf_build_no | default('UNDEFINED') }}
           build_pcf_module_ver: {{ build_pcf_module_ver | default('UNDEFINED') }}
           build_pcf_src_root  : {{ build_pcf_src_root | default('UNDEFINED') }}
           build_pcf_build_root: {{ build_pcf_build_root | default('UNDEFINED') }}
           build_pcf_releases_dir: {{ build_pcf_releases_dir | default('UNDEFINED') }}
-        success_msg: "✅ All required variables defined"
+        success_msg: "? All required variables defined"
 
     - name: "Validate branch format"
       assert:
         that:
           - build_pcf_branch is regex('^10\.2\.1\.[0-9]+_orion_int$')
         fail_msg: |
-          ❌ VALIDATION FAILED: Invalid branch format
+          ? VALIDATION FAILED: Invalid branch format
           Expected format: 10.2.1.x_orion_int
           Got: {{ build_pcf_branch }}
-        success_msg: "✅ Branch format valid: {{ build_pcf_branch }}"
+        success_msg: "? Branch format valid: {{ build_pcf_branch }}"
 
     - name: "Validate build number format"
       assert:
         that:
           - build_pcf_build_no is regex('^[0-9]+$')
         fail_msg: |
-          ❌ VALIDATION FAILED: Invalid build number
+          ? VALIDATION FAILED: Invalid build number
           Expected: numeric only
           Got: {{ build_pcf_build_no }}
-        success_msg: "✅ Build number valid: {{ build_pcf_build_no }}"
+        success_msg: "? Build number valid: {{ build_pcf_build_no }}"
 
     - name: "Validate module version format"
       assert:
         that:
           - build_pcf_module_ver is regex('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
         fail_msg: |
-          ❌ VALIDATION FAILED: Invalid module version format
+          ? VALIDATION FAILED: Invalid module version format
           Expected: x.x.x.x (4 numeric parts)
           Got: {{ build_pcf_module_ver }}
-        success_msg: "✅ Module version format valid: {{ build_pcf_module_ver }}"
+        success_msg: "? Module version format valid: {{ build_pcf_module_ver }}"
 
     - name: "Log validation passed"
       shell: |
-        echo "[VALIDATE][PASSED] All variable validations successful — {{ ansible_date_time.iso8601 }}" >> "{{ build_pcf_log }}"
+        echo "[VALIDATE][PASSED] All variable validations successful -- {{ ansible_date_time.iso8601 }}" >> "{{ build_pcf_log }}"
         echo "[VALIDATE][ENV] Environment set to: {{ build_pcf_environment }}" >> "{{ build_pcf_log }}"
       args:
         executable: /bin/bash
@@ -118,7 +118,7 @@
   rescue:
     - name: "Log validation failure"
       shell: |
-        echo "[VALIDATE][FAILED] Validation check failed — {{ ansible_date_time.iso8601 }}" >> "{{ build_pcf_log }}" 2>/dev/null || true
+        echo "[VALIDATE][FAILED] Validation check failed -- {{ ansible_date_time.iso8601 }}" >> "{{ build_pcf_log }}" 2>/dev/null || true
       args:
         executable: /bin/bash
       ignore_errors: yes
@@ -150,12 +150,12 @@
     - name: "Display derived paths"
       debug:
         msg: |
-          📁 Derived Build Paths:
-          ├─ Version       : {{ build_pcf_version }}
-          ├─ Environment   : {{ build_pcf_environment }}
-          ├─ SVN Repo      : {{ build_pcf_svn_repo }}
-          ├─ Build Dir     : {{ build_pcf_build_dir }}
-          └─ Release Dir   : {{ build_pcf_release_dir }}
+          ? Derived Build Paths:
+          +- Version       : {{ build_pcf_version }}
+          +- Environment   : {{ build_pcf_environment }}
+          +- SVN Repo      : {{ build_pcf_svn_repo }}
+          +- Build Dir     : {{ build_pcf_build_dir }}
+          +- Release Dir   : {{ build_pcf_release_dir }}
 
     - name: "Log derived paths"
       shell: |
@@ -179,7 +179,7 @@
     - name: "Fail if SVN repo missing"
       fail:
         msg: |
-          ❌ SVN Repository not found at: {{ build_pcf_svn_repo }}
+          ? SVN Repository not found at: {{ build_pcf_svn_repo }}
 
           Possible causes:
           - SVN repository not synced from buildserver
@@ -210,11 +210,11 @@
         that:
           - build_disk_avail.stdout | int >= 5
         fail_msg: |
-          ❌ INSUFFICIENT DISK SPACE for PCF build
+          ? INSUFFICIENT DISK SPACE for PCF build
           Available : {{ build_disk_avail.stdout }}GB
           Required  : 5GB minimum
           Build Dir : {{ build_pcf_build_root }}
-        success_msg: "✅ Disk space OK: {{ build_disk_avail.stdout }}GB available"
+        success_msg: "? Disk space OK: {{ build_disk_avail.stdout }}GB available"
 
     - name: "Log validation complete"
       shell: |
@@ -228,7 +228,7 @@
 
     - name: "Log pre-flight checks passed"
       shell: |
-        echo "[PRE-FLIGHT] ✅ All pre-flight checks passed — {{ ansible_date_time.iso8601 }}" >> "{{ build_pcf_log }}"
+        echo "[PRE-FLIGHT] ? All pre-flight checks passed -- {{ ansible_date_time.iso8601 }}" >> "{{ build_pcf_log }}"
       args:
         executable: /bin/bash
       ignore_errors: yes
@@ -244,7 +244,7 @@
 
     - name: "Log pre-flight check failure"
       shell: |
-        echo "[PRE-FLIGHT] ❌ FAILED — {{ ansible_date_time.iso8601 }}" >> "{{ build_pcf_log }}" 2>/dev/null || true
+        echo "[PRE-FLIGHT] ? FAILED -- {{ ansible_date_time.iso8601 }}" >> "{{ build_pcf_log }}" 2>/dev/null || true
       args:
         executable: /bin/bash
       ignore_errors: yes

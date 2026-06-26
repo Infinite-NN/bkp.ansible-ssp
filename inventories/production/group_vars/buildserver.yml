@@ -1,13 +1,13 @@
 ---
 # =============================================================
-# Build Server Variables — Production Environment
+# Build Server Variables -- Production Environment
 # Applies to: buildserver group in inventory
 # Used by: build_pcf role
 # =============================================================
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Build Environment Paths
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Chroot sandbox for isolated PCF builds
 sandbox_path: "/sandbox/rhel810"
@@ -27,9 +27,9 @@ release_base: "/root/releases"
 # Kernel RPM staging area
 kernel_work_dir: "/tmp/kernel_build"
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Build Script Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # PCF build script path relative to SVN checkout
 build_pcf_script: "icu/buildtools/bambooBuildRpms"
@@ -37,9 +37,9 @@ build_pcf_script: "icu/buildtools/bambooBuildRpms"
 # Build system user
 build_user: "bambooagent"
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Source Control Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # SCM base URL for branch discovery
 scm_base_url: "https://scm.forge.avaya.com/svnroot/aurora/branches"
@@ -47,9 +47,9 @@ scm_base_url: "https://scm.forge.avaya.com/svnroot/aurora/branches"
 # SCM branch pattern to match
 scm_branch_pattern: '^10\.2\.1\.[0-9]+_orion_int$'
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Build Timeout Configuration (seconds)
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Full PCF build timeout (3 hours)
 build_timeout_max: 10800
@@ -60,9 +60,9 @@ kernel_timeout_max: 1200
 # RPM verification timeout (5 minutes)
 rpm_check_timeout: 300
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Build Retry Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Retry count for build failures
 build_retry_count: 2
@@ -70,9 +70,9 @@ build_retry_count: 2
 # Delay between retries (seconds)
 build_retry_delay: 60
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Disk Space Requirements (GB)
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Minimum free space on build filesystem
 build_min_disk_free_gb: 5
@@ -80,9 +80,9 @@ build_min_disk_free_gb: 5
 # Minimum free space on /
 build_min_root_disk_free_gb: 2
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Build Artifact Management
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Archive old RPMs before building
 archive_old_rpms: true
@@ -93,9 +93,9 @@ rpm_archive_path: "{{ release_base }}/archive"
 # Keep how many recent builds
 keep_recent_builds: 5
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Build Validation & Verification
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Verify RPM signatures after build
 verify_rpm_signatures: true
@@ -106,16 +106,16 @@ generate_rpm_checksums: true
 # Verify kernel RPM integrity
 verify_kernel_rpm: true
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Parallel Build Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Maximum parallel builds
 max_parallel_builds: 4
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Logging & Reporting
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Enable detailed build logging
 enable_build_logging: true
@@ -126,9 +126,9 @@ keep_logs_on_failure: true
 # Log retention (days)
 build_log_retention_days: 30
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Cleanup Behavior
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Clean build directory after success
 cleanup_build_on_success: false
@@ -139,9 +139,9 @@ cleanup_kernel_on_success: false
 # Aggressive cleanup (remove everything)
 aggressive_cleanup: false
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Feature Flags
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Enable kernel updates during build
 enable_kernel_updates: true
@@ -152,9 +152,9 @@ enable_parallel_compile: true
 # Enable debug symbols in build
 enable_debug_symbols: false
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Error Handling & Recovery
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Fail fast on first error
 fail_fast: true
@@ -165,9 +165,9 @@ auto_rollback: false
 # Preserve build artifacts on failure
 preserve_on_failure: true
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Notification Settings
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Notify on build completion
 notify_on_completion: true
@@ -178,9 +178,9 @@ notify_only_failures: false
 # Email recipients
 build_notification_recipients: []
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Chroot & Sandbox Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Validate chroot exists before build
 validate_chroot: true
@@ -194,9 +194,9 @@ sandbox_binds:
 # Cleanup chroot after build
 cleanup_chroot: false
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Performance Tuning
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # CPU affinity (core range, or empty for all)
 build_cpu_affinity: ""
@@ -207,9 +207,9 @@ build_nice_level: 0
 # I/O scheduler priority (idle, best-effort, realtime)
 build_io_priority: "best-effort"
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Security & Access Control
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Require password for sudo operations
 require_sudo_password: false
@@ -217,9 +217,9 @@ require_sudo_password: false
 # Run build as unprivileged user (if applicable)
 run_as_unprivileged: false
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Development & Debugging
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Enable verbose build output
 verbose_build_output: false

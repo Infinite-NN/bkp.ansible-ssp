@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# Post-Reboot — Repackage SSP with Updated Modules
+# Post-Reboot -- Repackage SSP with Updated Modules
 # Creates final SSP package: SSP-NNN-01-MonYYYY.tar.gz
 # Includes MD5 checksum and TAR archive
 # =============================================================
@@ -16,11 +16,11 @@
     - name: "Display repackage configuration"
       debug:
         msg: |
-          📦 SSP Repackage Configuration:
-          ├─ Source      : {{ ssp_path }}
-          ├─ Output Dir  : {{ ssp_release_output_dir }}
-          ├─ Compress    : {{ repackage_compress | default(true) }}
-          └─ Checksum    : {{ repackage_generate_checksum | default(true) }}
+          ? SSP Repackage Configuration:
+          +- Source      : {{ ssp_path }}
+          +- Output Dir  : {{ ssp_release_output_dir }}
+          +- Compress    : {{ repackage_compress | default(true) }}
+          +- Checksum    : {{ repackage_generate_checksum | default(true) }}
 
   tags:
     - repackage
@@ -36,7 +36,7 @@
           - ssp_path is defined
           - ssp_path | length > 0
         fail_msg: "ssp_path is not defined"
-        success_msg: "✅ ssp_path validated"
+        success_msg: "? ssp_path validated"
 
     - name: "Verify SSP directory exists"
       stat:
@@ -111,10 +111,10 @@
     - name: "Display package name"
       debug:
         msg: |
-          📦 Package Name:
-          ├─ SSP Number : {{ pkg_ssp_num_padded }}
-          ├─ Month      : {{ pkg_month_name.stdout | trim }}
-          └─ Full Name  : {{ pkg_final_name }}
+          ? Package Name:
+          +- SSP Number : {{ pkg_ssp_num_padded }}
+          +- Month      : {{ pkg_month_name.stdout | trim }}
+          +- Full Name  : {{ pkg_final_name }}
 
   tags:
     - repackage
@@ -143,7 +143,7 @@
         echo "Copying SSP to: $WORK_DIR"
         cp -a "{{ ssp_path }}"/. "$WORK_DIR/"
 
-        echo "✅ SSP copied with new name: $FINAL_NAME"
+        echo "? SSP copied with new name: $FINAL_NAME"
       args:
         executable: /bin/bash
       changed_when: true
@@ -158,10 +158,10 @@
 
         cd "$TMPDIR"
 
-        echo "⏳ Creating TAR archive..."
+        echo "? Creating TAR archive..."
         tar -cf "${OUTPUT_DIR}/${FINAL_NAME}.tar" "$FINAL_NAME" 2>&1 | tail -10
 
-        echo "✅ TAR archive created"
+        echo "? TAR archive created"
       args:
         executable: /bin/bash
       register: tar_create
@@ -200,17 +200,17 @@
         TAR_FILE="${OUTPUT_DIR}/${FINAL_NAME}.tar"
 
         if [ ! -f "$TAR_FILE" ]; then
-          echo "❌ TAR file not found: $TAR_FILE"
+          echo "? TAR file not found: $TAR_FILE"
           exit 1
         fi
 
-        echo "⏳ Compressing with gzip..."
+        echo "? Compressing with gzip..."
         gzip -f "$TAR_FILE"
 
         TGZ_FILE="${TAR_FILE}.gz"
         TGZ_SIZE=$(stat -c%s "$TGZ_FILE" 2>/dev/null | numfmt --to=iec-i --suffix=B || stat -f%z "$TGZ_FILE" | awk '{printf "%.2fMB", $1/1024/1024}')
 
-        echo "✅ Compressed: ${FINAL_NAME}.tar.gz (${TGZ_SIZE})"
+        echo "? Compressed: ${FINAL_NAME}.tar.gz (${TGZ_SIZE})"
       args:
         executable: /bin/bash
       register: gzip_result
@@ -222,7 +222,7 @@
 
   rescue:
     - debug:
-        msg: "⚠️  Gzip compression failed (keeping uncompressed TAR)"
+        msg: "?  Gzip compression failed (keeping uncompressed TAR)"
 
   tags:
     - repackage
@@ -244,11 +244,11 @@
         # Check for .tar.gz first, then .tar
         if [ -f "${FINAL_NAME}.tar.gz" ]; then
           md5sum "${FINAL_NAME}.tar.gz" > "${FINAL_NAME}.tar.gz.md5"
-          echo "✅ MD5 generated for ${FINAL_NAME}.tar.gz"
+          echo "? MD5 generated for ${FINAL_NAME}.tar.gz"
           cat "${FINAL_NAME}.tar.gz.md5"
         elif [ -f "${FINAL_NAME}.tar" ]; then
           md5sum "${FINAL_NAME}.tar" > "${FINAL_NAME}.tar.md5"
-          echo "✅ MD5 generated for ${FINAL_NAME}.tar"
+          echo "? MD5 generated for ${FINAL_NAME}.tar"
           cat "${FINAL_NAME}.tar.md5"
         fi
       args:
@@ -262,7 +262,7 @@
 
   rescue:
     - debug:
-        msg: "⚠️  Checksum generation failed (non-critical)"
+        msg: "?  Checksum generation failed (non-critical)"
 
   tags:
     - repackage
@@ -282,12 +282,12 @@
     - name: "Display final packages"
       debug:
         msg: |
-          ✅ REPACKAGING COMPLETE
+          ? REPACKAGING COMPLETE
           
-          📦 Final Packages:
+          ? Final Packages:
           {{ final_packages.files | map(attribute='path') | map('basename') | list | join('\n') }}
           
-          📊 Sizes:
+          ? Sizes:
           {{ final_packages.files | map('regex_replace', '(.*)', '- \\1: ') | map(attribute=('size')) | map('human_readable') | list | join('\n') }}
 
     - name: "Clean up temporary working directory"

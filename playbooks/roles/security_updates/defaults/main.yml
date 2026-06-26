@@ -1,12 +1,12 @@
 ---
 # =============================================================
-# Security Updates Role — Default Configuration
+# Security Updates Role -- Default Configuration
 # Manages security RPM downloads and updates
 # =============================================================
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Repository Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # RHEL repository names
 dnf_repo_baseos: "rhel-8-for-x86_64-baseos-rpms"
@@ -20,9 +20,9 @@ security_update_exclude_packages:
   - "kernel-debug*"
   - "grub2-efi*"
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Download Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Download destination for security RPMs
 security_rpms_download_dir: "/repos/security"
@@ -36,9 +36,9 @@ archive_security_rpms: true
 # Archive directory
 security_rpms_archive_dir: "/repos/archive/security"
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Download Behavior
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Maximum retry attempts for downloads
 max_download_retries: 5
@@ -49,12 +49,12 @@ download_retry_delay: 30
 # Download timeout (seconds)
 download_timeout: 1200
 
-# Bandwidth limit (KB/s) — 0 for unlimited
+# Bandwidth limit (KB/s) -- 0 for unlimited
 bandwidth_limit: 0
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # RPM Validation
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Verify RPM signatures
 verify_rpm_signatures: false
@@ -65,9 +65,9 @@ verify_rpm_integrity: true
 # Remove 32-bit (i686) RPMs
 remove_i686_rpms: true
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Security Advisory Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Query CVE information
 query_cve_information: true
@@ -82,9 +82,9 @@ security_severity_levels:
   - Moderate
   - Low
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Report Generation
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Generate security report
 generate_security_report: true
@@ -104,9 +104,9 @@ report_include_cve_details: true
 # Include RHSA details in report
 report_include_rhsa_details: true
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Validation Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Validate downloaded RPMs against advisories
 validate_rpms: true
@@ -117,9 +117,9 @@ min_security_rpm_count: 1
 # Fail if no security updates available
 fail_if_no_updates: false
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Logging Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Log directory (inherited from common)
 log_dir: "/var/log/avaya_pipeline"
@@ -127,9 +127,9 @@ log_dir: "/var/log/avaya_pipeline"
 # Enable detailed security update logging
 enable_detailed_logging: true
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Cache Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Cache DNF metadata
 cache_dnf_metadata: true
@@ -137,9 +137,9 @@ cache_dnf_metadata: true
 # Cache time to live (hours)
 cache_ttl_hours: 24
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Feature Flags
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Enable automatic security updates
 enable_auto_security_updates: true
@@ -150,9 +150,9 @@ enable_notifications: true
 # Notify on no-updates scenario
 notify_on_no_updates: false
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Cleanup Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Clean up old security reports
 cleanup_old_reports: true

@@ -1,17 +1,17 @@
 ---
 # =============================================================
-# Security Updates Role — Main Entry Point
+# Security Updates Role -- Main Entry Point
 # Orchestrates security RPM downloads and reporting
 # =============================================================
 
 - name: "[SEC-UPDATE] Security updates role initialization"
   debug:
     msg: |
-      🛡️  Security Updates Role Loaded
-      ├─ Purpose  : Download & validate security RPMs
-      ├─ Target   : {{ inventory_hostname }}
-      ├─ BaseOS   : {{ dnf_repo_baseos }}
-      └─ AppStream: {{ dnf_repo_appstream }}
+      ?  Security Updates Role Loaded
+      +- Purpose  : Download & validate security RPMs
+      +- Target   : {{ inventory_hostname }}
+      +- BaseOS   : {{ dnf_repo_baseos }}
+      +- AppStream: {{ dnf_repo_appstream }}
   tags:
     - security_updates
     - sec_update_init
@@ -27,7 +27,7 @@
           - dnf_repo_baseos is defined
           - dnf_repo_appstream is defined
         fail_msg: "Missing required variables for security_updates role"
-        success_msg: "✅ All prerequisites validated"
+        success_msg: "? All prerequisites validated"
 
     - name: "Create security updates directories"
       file:
@@ -78,7 +78,7 @@
 - name: "[SEC-UPDATE] Log role completion"
   lineinfile:
     path: "{{ log_dir }}/pipeline_{{ ansible_date_time.date }}.log"
-    line: "[SEC-UPDATE][COMPLETE] Security updates role complete — {{ ansible_date_time.iso8601 }}"
+    line: "[SEC-UPDATE][COMPLETE] Security updates role complete -- {{ ansible_date_time.iso8601 }}"
     insertafter: EOF
   ignore_errors: yes
   tags:

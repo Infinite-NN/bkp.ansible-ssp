@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# Security Updates — Generate Security Report
+# Security Updates -- Generate Security Report
 # Creates comprehensive report of downloaded security updates
 # =============================================================
 
@@ -22,11 +22,11 @@
     - name: "Display report configuration"
       debug:
         msg: |
-          📋 Security Report Configuration:
-          ├─ Format       : {{ report_format }}
-          ├─ Output Dir   : {{ security_report_dir }}
-          ├─ Include CVEs : {{ report_include_cve_details }}
-          └─ Include RHSA : {{ report_include_rhsa_information }}
+          ? Security Report Configuration:
+          +- Format       : {{ report_format }}
+          +- Output Dir   : {{ security_report_dir }}
+          +- Include CVEs : {{ report_include_cve_details }}
+          +- Include RHSA : {{ report_include_rhsa_information }}
 
   tags:
     - sec_report
@@ -65,7 +65,7 @@
     - name: "Display advisory information"
       debug:
         msg: |
-          🛡️  Security Advisory Summary:
+          ?  Security Advisory Summary:
           {{ severity_counts.stdout }}
 
   tags:
@@ -153,12 +153,12 @@
     - name: "Display report location"
       debug:
         msg: |
-          ✅ Security report generated:
-          └─ {{ security_report_dir }}/{{ security_report_filename }}
+          ? Security report generated:
+          +- {{ security_report_dir }}/{{ security_report_filename }}
 
   rescue:
     - debug:
-        msg: "⚠️  Report generation encountered issues (non-critical)"
+        msg: "?  Report generation encountered issues (non-critical)"
 
   tags:
     - sec_report
@@ -172,7 +172,7 @@
       when: cleanup_old_reports | bool
       shell: |
         find "{{ security_report_dir }}" -name "security_update_report*" -mtime +{{ report_retention_days }} -delete 2>/dev/null || true
-        echo "✅ Old reports cleaned"
+        echo "? Old reports cleaned"
       args:
         executable: /bin/bash
       changed_when: true
@@ -187,14 +187,14 @@
     - name: "Display final summary"
       debug:
         msg: |
-          ✅ SECURITY UPDATES ROLE COMPLETE
+          ? SECURITY UPDATES ROLE COMPLETE
           
-          📊 Deliverables:
-          ├─ Downloaded RPMs : {{ security_rpms_download_dir }}
-          ├─ Security Report : {{ security_report_dir }}/{{ security_report_filename }}
-          └─ Archive Location: {{ security_rpms_archive_dir }}
+          ? Deliverables:
+          +- Downloaded RPMs : {{ security_rpms_download_dir }}
+          +- Security Report : {{ security_report_dir }}/{{ security_report_filename }}
+          +- Archive Location: {{ security_rpms_archive_dir }}
           
-          ✨ Pipeline ready for next stages...
+          ? Pipeline ready for next stages...
 
   tags:
     - sec_report

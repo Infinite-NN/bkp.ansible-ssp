@@ -21,9 +21,9 @@
 - name: "Display discovery result for {{ current_pcf_version }}"
   debug:
     msg: |
-      🔍 PCF for {{ current_pcf_version }}:
-      ├─ Found    : {{ avaya_pcf_rpms.matched }}
-      └─ Location : {{ pcf_dir_item.path }}/{{ pcf_avaya_stream }}
+      ? PCF for {{ current_pcf_version }}:
+      +- Found    : {{ avaya_pcf_rpms.matched }}
+      +- Location : {{ pcf_dir_item.path }}/{{ pcf_avaya_stream }}
   when: avaya_pcf_rpms.matched > 0
 
 - name: "Process discovered PCF RPMs"
@@ -53,7 +53,7 @@
           echo "     Copied: $RPM_NAME"
         done < <(find "$SRC_DIR" -name "{{ pcf_rpm_prefix }}-*.rpm" -type f)
 
-        echo "✅ Total PCF RPMs copied for {{ current_pcf_version }}: $COUNT"
+        echo "? Total PCF RPMs copied for {{ current_pcf_version }}: $COUNT"
       args:
         executable: /bin/bash
       register: pcf_copy_result
@@ -66,5 +66,5 @@
 
 - name: "No PCF RPMs found for {{ current_pcf_version }}"
   debug:
-    msg: "⚠️  No PCF modules found under {{ pcf_dir_item.path }}/{{ pcf_avaya_stream }}"
+    msg: "?  No PCF modules found under {{ pcf_dir_item.path }}/{{ pcf_avaya_stream }}"
   when: avaya_pcf_rpms.matched == 0

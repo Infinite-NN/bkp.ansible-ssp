@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# Post-Reboot — IPCS Service Startup and Verification
+# Post-Reboot -- IPCS Service Startup and Verification
 # =============================================================
 
 - name: "[IPCS] Define IPCS service variables"
@@ -21,7 +21,7 @@
 - name: "Fail if IPCS script missing"
   fail:
     msg: |
-      ❌ IPCS startup script not found at: {{ ipcs_script }}
+      ? IPCS startup script not found at: {{ ipcs_script }}
       
       Expected script locations:
       - /usr/local/ipcs/bin/IPCS.sh
@@ -59,7 +59,7 @@
         
         sleep 2
         
-        echo "✅ IPCS stop complete"
+        echo "? IPCS stop complete"
       args:
         executable: /bin/bash
       register: ipcs_stop_result
@@ -72,7 +72,7 @@
 
   rescue:
     - debug:
-        msg: "⚠️  IPCS stop encountered issues (may be normal if not running)"
+        msg: "?  IPCS stop encountered issues (may be normal if not running)"
 
   tags:
     - ipcs
@@ -96,14 +96,14 @@
         if ! timeout {{ ipcs_startup_timeout }} "{{ ipcs_script }}" start 2>&1; then
           EXIT_CODE=$?
           if [ $EXIT_CODE -eq 124 ]; then
-            echo "⚠️  IPCS start timed out (may still be starting)"
+            echo "?  IPCS start timed out (may still be starting)"
           else
-            echo "❌ IPCS start failed with code: $EXIT_CODE"
+            echo "? IPCS start failed with code: $EXIT_CODE"
             exit $EXIT_CODE
           fi
         fi
 
-        echo "✅ IPCS start command completed"
+        echo "? IPCS start command completed"
       args:
         executable: /bin/bash
       register: ipcs_start_result
@@ -122,13 +122,13 @@
     - name: "Log IPCS start failure"
       lineinfile:
         path: "{{ log_dir }}/post_reboot_{{ ansible_date_time.date }}.log"
-        line: "[IPCS][START_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }} — {{ ansible_date_time.iso8601 }}"
+        line: "[IPCS][START_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }} -- {{ ansible_date_time.iso8601 }}"
         create: yes
         insertafter: EOF
       ignore_errors: yes
 
     - fail:
-        msg: "IPCS service failed to start — manual intervention required"
+        msg: "IPCS service failed to start -- manual intervention required"
 
   tags:
     - ipcs
@@ -167,9 +167,9 @@
         that:
           - "'FOUND_GUI_UP' in gui_check.stdout"
         fail_msg: |
-          ❌ GUI service did not come UP after {{ ipcs_status_retries }} retries
+          ? GUI service did not come UP after {{ ipcs_status_retries }} retries
           (waited {{ ipcs_status_retries * ipcs_status_delay }} seconds)
-        success_msg: "✅ GUI service confirmed UP"
+        success_msg: "? GUI service confirmed UP"
 
   rescue:
     - name: "Collect IPCS diagnostics on failure"
@@ -199,7 +199,7 @@
 
     - fail:
         msg: |
-          ❌ IPCS GUI service failed to start
+          ? IPCS GUI service failed to start
           
           Troubleshooting steps:
           1. Check IPCS logs: tail -100 /opt/ssp/logs/*.log
@@ -227,7 +227,7 @@
     - name: "Display full IPCS status"
       debug:
         msg: |
-          📊 Full IPCS Status:
+          ? Full IPCS Status:
           
           {{ full_ipcs_status.stdout }}
 
@@ -251,15 +251,15 @@
           - "'UP' in full_ipcs_status.stdout or 'up' in full_ipcs_status.stdout"
           - "'DOWN' not in full_ipcs_status.stdout or full_ipcs_status.stdout | default('') | length < 50
         fail_msg: |
-          ⚠️  Some IPCS services may not be fully UP
+          ?  Some IPCS services may not be fully UP
           Status output: {{ full_ipcs_status.stdout }}
-        success_msg: "✅ IPCS services confirmed UP"
+        success_msg: "? IPCS services confirmed UP"
 
     - name: "Log IPCS startup completion"
       lineinfile:
         path: "{{ log_dir }}/post_reboot_{{ ansible_date_time.date }}.log"
         line: |
-          [IPCS][UP] All IPCS services started successfully — {{ ansible_date_time.iso8601 }}
+          [IPCS][UP] All IPCS services started successfully -- {{ ansible_date_time.iso8601 }}
           {{ service_count.stdout }}
         insertafter: EOF
 
@@ -267,12 +267,12 @@
     - name: "Log IPCS status query warning"
       lineinline:
         path: "{{ log_dir }}/post_reboot_{{ ansible_date_time.date }}.log"
-        line: "[IPCS][STATUS_WARN] Could not fully verify service status — {{ ansible_date_time.iso8601 }}"
+        line: "[IPCS][STATUS_WARN] Could not fully verify service status -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
       ignore_errors: yes
 
     - debug:
-        msg: "⚠️  Could not retrieve full IPCS status (non-critical)"
+        msg: "?  Could not retrieve full IPCS status (non-critical)"
 
   tags:
     - ipcs
@@ -281,13 +281,13 @@
 - name: "[IPCS] Completion summary"
   debug:
     msg: |
-      ✅ IPCS STARTUP COMPLETE
+      ? IPCS STARTUP COMPLETE
       
-      📋 Services:
-      ├─ GUI           : ✅ UP
-      ├─ Web Interface : ✅
-      ├─ Java Runtime  : ✅
-      └─ Status        : Ready
+      ? Services:
+      +- GUI           : ? UP
+      +- Web Interface : ?
+      +- Java Runtime  : ?
+      +- Status        : Ready
       
       Proceed to next post-reboot phase...
   tags:

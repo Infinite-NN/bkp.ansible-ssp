@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# Post-Reboot — Update PCF Modules
+# Post-Reboot -- Update PCF Modules
 # Fetches latest PCF RPMs for each version directory
 # Calls sub-task: update_pcf_version.yml
 # =============================================================
@@ -16,11 +16,11 @@
     - name: "Display PCF configuration"
       debug:
         msg: |
-          🔧 PCF Module Update Configuration:
-          ├─ SSP Path       : {{ ssp_path }}
-          ├─ Search Pattern : 10.2.1.*
-          ├─ RPM Prefix     : {{ pcf_rpm_prefix }}
-          └─ Archive Path   : {{ repo_pcf_archive_path }}
+          ? PCF Module Update Configuration:
+          +- SSP Path       : {{ ssp_path }}
+          +- Search Pattern : 10.2.1.*
+          +- RPM Prefix     : {{ pcf_rpm_prefix }}
+          +- Archive Path   : {{ repo_pcf_archive_path }}
 
   tags:
     - pcf
@@ -36,7 +36,7 @@
           - ssp_path is defined
           - ssp_path | length > 0
         fail_msg: "ssp_path is not defined"
-        success_msg: "✅ ssp_path validated"
+        success_msg: "? ssp_path validated"
 
     - name: "Verify SSP exists"
       stat:
@@ -67,12 +67,12 @@
     - name: "Display discovered directories"
       debug:
         msg: |
-          📁 PCF Version Directories Found: {{ pcf_version_dirs.matched }}
+          ? PCF Version Directories Found: {{ pcf_version_dirs.matched }}
           {{ pcf_version_dirs.files | map(attribute='path') | map('basename') | list | join('\n') }}
 
     - name: "Warn if none found"
       debug:
-        msg: "⚠️  No version directories found — no PCF modules to update"
+        msg: "?  No version directories found -- no PCF modules to update"
       when: pcf_version_dirs.matched == 0
 
   tags:
@@ -113,7 +113,7 @@
       ignore_errors: yes
 
     - fail:
-        msg: "PCF module processing failed — {{ ansible_failed_result.msg }}"
+        msg: "PCF module processing failed -- {{ ansible_failed_result.msg }}"
 
   tags:
     - pcf
@@ -134,17 +134,17 @@
     - name: "Display final PCF RPM inventory"
       debug:
         msg: |
-          ✅ PCF MODULE UPDATE COMPLETE
+          ? PCF MODULE UPDATE COMPLETE
           
-          🔧 Final Inventory:
-          ├─ PCF RPMs Found: {{ final_pcf_rpms.matched }}
-          └─ Modules:
+          ? Final Inventory:
+          +- PCF RPMs Found: {{ final_pcf_rpms.matched }}
+          +- Modules:
           {{ final_pcf_rpms.files | map(attribute='path') | map('basename') | list | join('\n') }}
 
     - name: "Log completion"
       lineinfile:
         path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
-        line: "[PCF][SUCCESS] {{ ansible_date_time.iso8601 }} — {{ final_pcf_rpms.matched }} PCF module(s) in place"
+        line: "[PCF][SUCCESS] {{ ansible_date_time.iso8601 }} -- {{ final_pcf_rpms.matched }} PCF module(s) in place"
         create: yes
 
   tags:

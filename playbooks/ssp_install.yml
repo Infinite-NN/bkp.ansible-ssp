@@ -24,7 +24,7 @@
     deployment_timestamp: "{{ ansible_date_time.iso8601 }}"
 
   pre_tasks:
-    - name: "🔍 Pre-Installation Validation"
+    - name: "? Pre-Installation Validation"
       block:
         - name: "Check available disk space"
           shell: df -BG / | awk 'NR==2 {print $4}' | sed 's/G//'
@@ -45,25 +45,25 @@
         - name: "Display pre-installation summary"
           debug:
             msg: |
-              ╔════════════════════════════════════╗
-              ║   SSP INSTALLATION PHASE           ║
-              ╠════════════════════════════════════╣
-              ║ Host             : {{ inventory_hostname }}
-              ║ Environment      : {{ environment_name }}
-              ║ SSP Version      : {{ ssp_version }}
-              ║ Download URL     : {{ ssp_download_url }}
-              ║ Install Path     : {{ ssp_install_path }}
-              ║ Disk Space (GB)  : {{ disk_space.stdout }}
-              ║ Timestamp        : {{ deployment_timestamp }}
-              ║ Artifact Server  : {{ artifact_server_check.status }}
-              ╚════════════════════════════════════╝
+              ??????????????????????????????????????
+              ?   SSP INSTALLATION PHASE           ?
+              ??????????????????????????????????????
+              ? Host             : {{ inventory_hostname }}
+              ? Environment      : {{ environment_name }}
+              ? SSP Version      : {{ ssp_version }}
+              ? Download URL     : {{ ssp_download_url }}
+              ? Install Path     : {{ ssp_install_path }}
+              ? Disk Space (GB)  : {{ disk_space.stdout }}
+              ? Timestamp        : {{ deployment_timestamp }}
+              ? Artifact Server  : {{ artifact_server_check.status }}
+              ??????????????????????????????????????
 
       rescue:
-        - name: "❌ Pre-installation validation failed"
+        - name: "? Pre-installation validation failed"
           fail:
             msg: "Pre-installation checks failed. Review errors above."
 
-    - name: "📋 Create pre-installation backup marker"
+    - name: "? Create pre-installation backup marker"
       copy:
         content: |
           Pre-Installation Backup
@@ -83,7 +83,7 @@
         ssp_install_timestamp: "{{ deployment_timestamp }}"
 
   post_tasks:
-    - name: "✅ Pre-Reboot Validation"
+    - name: "? Pre-Reboot Validation"
       block:
         - name: "Verify SSP installation"
           stat:
@@ -101,13 +101,13 @@
             dest: "/etc/ssp_install.conf"
             mode: '0644'
 
-        - name: "⏸️  Wait for services to settle before reboot"
+        - name: "?  Wait for services to settle before reboot"
           pause:
             seconds: 30
 
-        - name: "🔄 Reboot system (will reconnect)"
+        - name: "? Reboot system (will reconnect)"
           reboot:
-            msg: "SSP installation complete — rebooting for activation"
+            msg: "SSP installation complete -- rebooting for activation"
             pre_reboot_delay: 60
             post_reboot_delay: 30
             reboot_timeout: 600
@@ -116,12 +116,12 @@
           poll: 0
           register: reboot_job
 
-        - name: "⏳ Allow system time to reboot"
+        - name: "? Allow system time to reboot"
           pause:
             seconds: 120
 
       rescue:
-        - name: "⚠️  Reboot handling"
+        - name: "?  Reboot handling"
           debug:
             msg: "System reboot may still be in progress. Continuing..."
 
@@ -140,7 +140,7 @@
     update_pcf: "{{ skip_pcf_update | default(false) | bool | ternary(false, true) }}"
 
   pre_tasks:
-    - name: "🔍 Post-Reboot Validation"
+    - name: "? Post-Reboot Validation"
       block:
         - name: "Wait for system to be fully responsive"
           wait_for_connection:
@@ -159,19 +159,19 @@
         - name: "Display post-reboot summary"
           debug:
             msg: |
-              ╔════════════════════════════════════╗
-              ║   POST-REBOOT PHASE                ║
-              ╠════════════════════════════════════╣
-              ║ Host                : {{ inventory_hostname }}
-              ║ Environment         : {{ environment_name }}
-              ║ Update Security Pkg : {{ update_security_packages }}
-              ║ Update PCF          : {{ update_pcf }}
-              ║ Boot Time           : {{ ansible_uptime_seconds | int }} seconds
-              ║ Load Average        : {{ ansible_load.1 }}
-              ╚════════════════════════════════════╝
+              ??????????????????????????????????????
+              ?   POST-REBOOT PHASE                ?
+              ??????????????????????????????????????
+              ? Host                : {{ inventory_hostname }}
+              ? Environment         : {{ environment_name }}
+              ? Update Security Pkg : {{ update_security_packages }}
+              ? Update PCF          : {{ update_pcf }}
+              ? Boot Time           : {{ ansible_uptime_seconds | int }} seconds
+              ? Load Average        : {{ ansible_load.1 }}
+              ??????????????????????????????????????
 
       rescue:
-        - name: "❌ Post-reboot validation failed"
+        - name: "? Post-reboot validation failed"
           fail:
             msg: "System did not come up properly after reboot"
 
@@ -184,7 +184,7 @@
         post_reboot_timeout_seconds: "{{ post_reboot_timeout }}"
 
   post_tasks:
-    - name: "✅ Post-Reboot Summary"
+    - name: "? Post-Reboot Summary"
       block:
         - name: "Collect system information"
           shell: |
@@ -216,12 +216,12 @@
               System Information:
               {{ system_info.stdout }}
               
-              Status: ✅ INSTALLATION COMPLETE
+              Status: ? INSTALLATION COMPLETE
             dest: "/var/log/ssp_post_reboot_{{ ansible_date_time.iso8601_basic_short }}.log"
             mode: '0644'
 
       rescue:
-        - name: "⚠️  Post-reboot summary generation warning"
+        - name: "?  Post-reboot summary generation warning"
           debug:
             msg: "Could not generate full post-reboot summary (non-critical)"
 

@@ -1,13 +1,13 @@
 ---
 # =============================================================
-# SBC (SBCE Service Control) Variables — Production
+# SBC (SBCE Service Control) Variables -- Production
 # Applies to: sbc group in inventory
 # Used by: ssp_install, post_reboot, security_updates roles
 # =============================================================
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # SSP Installation Paths
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Working directory for SSP extraction/staging
 ssp_work_dir: "/opt/ssp_work"
@@ -18,9 +18,9 @@ ssp_install_dir: "/opt/ssp"
 # SSP backup directory
 ssp_backup_dir: "/opt/ssp_backup"
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Repository Paths
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Base repository directory
 repo_base: "/repos"
@@ -31,9 +31,9 @@ repo_appstream_path: "/repos/AppStream"
 repo_additional_path: "/repos/AdditionalRPMs"
 repo_archive_path: "/repos/archive"
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # IPCS Service Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # IPCS control/init script
 ipcs_script: "/usr/local/ipcs/icu3/scripts/ipcs-init.py"
@@ -50,9 +50,9 @@ ipcs_gui_check_retries: 60
 # IPCS GUI check delay (seconds)
 ipcs_gui_check_delay: 10
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Backup & Archive Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Backup base directory
 backup_base: "/archive/backup/upgrade"
@@ -63,9 +63,9 @@ backup_retention_count: 3
 # Backup compression
 backup_compression: "gzip"
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Logging & Reporting
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Patch log (created by patchSBC)
 patch_log: "/archive/log/icu/patch.log"
@@ -76,9 +76,9 @@ report_file: "/tmp/security_update_report.txt"
 # RPM inventory file
 rpm_inventory: "/tmp/rpm_inventory.txt"
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # DNF Repository Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Repository names (RHEL 8+)
 dnf_repos:
@@ -92,9 +92,9 @@ dnf_exclude_packages:
   - "podman*"
   - "kernel-debug*"
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # SSP Configuration & Validation
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # SSP branch version pattern
 ssp_branch_pattern: '^10\.2\.1\.\d+$'
@@ -108,9 +108,9 @@ validate_ssp_structure: true
 # SSP installation method (move or extract)
 ssp_install_method: "auto"
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Security Update Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Download security updates automatically
 auto_download_security_updates: true
@@ -124,9 +124,9 @@ update_pcf_modules: true
 # Update SBC release info
 update_sbc_release: true
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Timeout Configuration (seconds)
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # SSP move/copy timeout
 ssp_move_timeout: 300
@@ -146,9 +146,9 @@ reboot_timeout: 600
 # Post-reboot reconnection timeout
 post_reboot_connect_timeout: 30
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Retry Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Retry count for operations
 operation_retry_count: 3
@@ -162,9 +162,9 @@ download_retry_count: 5
 # Download retry delay (seconds)
 download_retry_delay: 30
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Disk Space Requirements (GB)
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Minimum free space on /opt
 ssp_min_opt_free_gb: 2
@@ -175,9 +175,9 @@ ssp_min_root_free_gb: 1
 # Minimum free space for repositories
 repo_min_free_gb: 5
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Cleanup & Maintenance
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Cleanup work directories after completion
 cleanup_work_dirs: true
@@ -191,9 +191,9 @@ archive_old_backups: true
 # Archive old repositories
 archive_old_repos: true
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Feature Flags
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Enable comprehensive health checks
 enable_health_checks: true
@@ -210,9 +210,9 @@ enable_security_reports: true
 # Enable HTML reporting
 enable_html_reporting: true
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Error Handling
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Fail fast on errors
 fail_fast: true
@@ -223,9 +223,9 @@ continue_on_non_critical: true
 # Abort entire play on critical error
 abort_on_critical_error: true
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Notification & Alerting
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Send notifications on completion
 send_notifications: false
@@ -236,9 +236,9 @@ notify_on_failure_only: true
 # Notification recipients
 sbc_notification_recipients: []
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Reboot Configuration
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Auto-reboot after SSP installation
 auto_reboot: true
@@ -252,9 +252,9 @@ pre_reboot_delay: 60
 # Post-reboot delay (seconds)
 post_reboot_delay: 180
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Kernel & System Updates
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Update kernel during security updates
 update_kernel: true
@@ -262,9 +262,9 @@ update_kernel: true
 # Update system packages
 update_system_packages: true
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Performance & Optimization
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Enable parallel RPM downloads
 parallel_downloads: true
@@ -272,9 +272,9 @@ parallel_downloads: true
 # Max parallel downloads
 max_parallel_downloads: 4
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Diagnostics & Debugging
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 # Collect full diagnostics on failure
 collect_diagnostics_on_failure: true

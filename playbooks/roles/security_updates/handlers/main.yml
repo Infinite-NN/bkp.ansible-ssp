@@ -1,13 +1,13 @@
 ---
 # =============================================================
-# Security Updates Role — Handlers
+# Security Updates Role -- Handlers
 # Triggered by notify: statements in tasks
 # Manages post-update operations and notifications
 # =============================================================
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Log Management Handlers
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 - name: rotate security update logs
   block:
@@ -32,7 +32,7 @@
             ARCHIVE="${LOG}.$(date +%Y%m%d_%H%M%S).bak"
             mv "$LOG" "$ARCHIVE"
             gzip -f "$ARCHIVE" &
-            echo "✅ Log rotated: $ARCHIVE.gz"
+            echo "? Log rotated: $ARCHIVE.gz"
           fi
         fi
       args:
@@ -65,7 +65,7 @@
           -mtime +$RETENTION_DAYS \
           -exec mv {} "$ARCHIVE_DIR/" \; 2>/dev/null || true
         
-        echo "✅ Old reports archived"
+        echo "? Old reports archived"
       args:
         executable: /bin/bash
       changed_when: true
@@ -78,9 +78,9 @@
 
 ---
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Cleanup Handlers
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 - name: cleanup security rpms temp directory
   block:
@@ -93,7 +93,7 @@
     - name: "Log cleanup completion"
       lineinfile:
         path: "{{ log_dir }}/pipeline_{{ ansible_date_time.date }}.log"
-        line: "[SEC-CLEANUP] Temporary directories cleaned — {{ ansible_date_time.iso8601 }}"
+        line: "[SEC-CLEANUP] Temporary directories cleaned -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
         create: yes
       ignore_errors: yes
@@ -117,7 +117,7 @@
           -o -name "*.incomplete" \
         | xargs rm -f 2>/dev/null || true
         
-        echo "✅ Incomplete downloads removed"
+        echo "? Incomplete downloads removed"
       args:
         executable: /bin/bash
       changed_when: true
@@ -130,9 +130,9 @@
 
 ---
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Service Management Handlers
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 - name: restart security update service
   block:
@@ -145,7 +145,7 @@
     - name: "Log service restart"
       lineinfile:
         path: "{{ log_dir }}/pipeline_{{ ansible_date_time.date }}.log"
-        line: "[SEC-SERVICE] Security update service restarted — {{ ansible_date_time.iso8601 }}"
+        line: "[SEC-SERVICE] Security update service restarted -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
         create: yes
       ignore_errors: yes
@@ -157,25 +157,25 @@
 
 ---
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Notification Handlers
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 - name: send security update completion notification
   block:
     - name: "Log notification trigger"
       debug:
-        msg: "📧 Security update completion notification triggered"
+        msg: "? Security update completion notification triggered"
 
     - name: "Generate notification message"
       set_fact:
         notification_message: |
           Security Updates Completed Successfully
-          ────────────────────────────────────
+          ------------------------------------
           Host       : {{ inventory_hostname }}
           Timestamp  : {{ ansible_date_time.iso8601 }}
           Environment: {{ environment | default('production') }}
-          Status     : ✅ COMPLETE
+          Status     : ? COMPLETE
 
     - name: "Log notification content"
       lineinfile:
@@ -197,13 +197,13 @@
   block:
     - name: "Log failure notification"
       debug:
-        msg: "📧 Security update failure notification triggered"
+        msg: "? Security update failure notification triggered"
 
     - name: "Generate failure message"
       set_fact:
         failure_message: |
           Security Updates Failed
-          ──────────────────────
+          ----------------------
           Host       : {{ inventory_hostname }}
           Timestamp  : {{ ansible_date_time.iso8601 }}
           Error      : {{ ansible_failed_result.msg | default('Unknown error') }}
@@ -224,9 +224,9 @@
 
 ---
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Report Generation Handlers
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 - name: finalize security report
   block:
@@ -244,7 +244,7 @@
           echo "Build Number: {{ ansible_date_time.epoch }}" >> "$REPORT"
           echo "============================================================" >> "$REPORT"
           
-          echo "✅ Report finalized"
+          echo "? Report finalized"
         fi
       args:
         executable: /bin/bash
@@ -258,9 +258,9 @@
 
 ---
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Diagnostic Handlers
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 - name: collect failure diagnostics
   block:
@@ -291,7 +291,7 @@
           tail -50 "{{ log_dir }}"/*.log 2>/dev/null | head -100 || true
         } > "$DIAG_FILE"
         
-        echo "✅ Diagnostics collected: $DIAG_FILE"
+        echo "? Diagnostics collected: $DIAG_FILE"
       args:
         executable: /bin/bash
       ignore_errors: yes
@@ -304,9 +304,9 @@
 
 ---
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Monitoring & Alerting Handlers
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 - name: update security metrics
   block:
@@ -330,7 +330,7 @@
         }
         EOF
         
-        echo "✅ Metrics recorded"
+        echo "? Metrics recorded"
       args:
         executable: /bin/bash
       changed_when: true
@@ -343,9 +343,9 @@
 
 ---
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Validation Handlers
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 - name: verify security updates integrity
   block:
@@ -361,14 +361,14 @@
             COUNT=$((COUNT + 1))
           else
             ERRORS=$((ERRORS + 1))
-            echo "⚠️  Invalid RPM: $rpm"
+            echo "?  Invalid RPM: $rpm"
           fi
         done
         
         if [ $ERRORS -eq 0 ]; then
-          echo "✅ All $COUNT RPMs verified"
+          echo "? All $COUNT RPMs verified"
         else
-          echo "⚠️  Found $ERRORS invalid RPM(s)"
+          echo "?  Found $ERRORS invalid RPM(s)"
         fi
       args:
         executable: /bin/bash

@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# Build PCF — Publish/Release Task
+# Build PCF -- Publish/Release Task
 # Copies built RPM to release directory and verifies
 # =============================================================
 
@@ -14,7 +14,7 @@
     - name: "Fail if release parent doesn't exist"
       fail:
         msg: |
-          ❌ Release parent directory does not exist: {{ build_pcf_releases_dir | dirname }}
+          ? Release parent directory does not exist: {{ build_pcf_releases_dir | dirname }}
           
           Verify:
           - /root/releases exists: ls -la /root/releases
@@ -34,11 +34,11 @@
         set -euo pipefail
         
         if [ ! -w "{{ build_pcf_releases_dir }}" ]; then
-          echo "❌ Release directory is not writable: {{ build_pcf_releases_dir }}"
+          echo "? Release directory is not writable: {{ build_pcf_releases_dir }}"
           exit 1
         fi
         
-        echo "✅ Release directory is writable"
+        echo "? Release directory is writable"
       args:
         executable: /bin/bash
 
@@ -46,7 +46,7 @@
     - name: "Log publish preparation failure"
       lineinfile:
         path: "{{ build_pcf_log }}"
-        line: "[PUBLISH][PREP_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }} — {{ ansible_date_time.iso8601 }}"
+        line: "[PUBLISH][PREP_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }} -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
       ignore_errors: yes
 
@@ -69,7 +69,7 @@
     - name: "Fail if source RPM missing"
       fail:
         msg: |
-          ❌ Source RPM file not found: {{ build_pcf_rpm_path.path }}
+          ? Source RPM file not found: {{ build_pcf_rpm_path.path }}
           
           Expected from build task output.
       when: not src_rpm_stat.stat.exists
@@ -82,10 +82,10 @@
     - name: "Display source RPM details"
       debug:
         msg: |
-          📦 Source RPM:
-          ├─ File     : {{ src_rpm_filename }}
-          ├─ Size     : {{ src_rpm_size }} bytes ({{ (src_rpm_size / 1048576) | round(2) }}MB)
-          └─ Path     : {{ build_pcf_rpm_path.path }}
+          ? Source RPM:
+          +- File     : {{ src_rpm_filename }}
+          +- Size     : {{ src_rpm_size }} bytes ({{ (src_rpm_size / 1048576) | round(2) }}MB)
+          +- Path     : {{ build_pcf_rpm_path.path }}
 
     - name: "Copy RPM to release directory"
       shell: |
@@ -99,7 +99,7 @@
 
         # Verify copy
         if [ ! -f "$DST" ]; then
-          echo "❌ Copy verification failed — file not found at destination"
+          echo "? Copy verification failed -- file not found at destination"
           exit 1
         fi
 
@@ -108,13 +108,13 @@
         DST_SIZE=$(stat --printf='%s' "$DST")
 
         if [ "$SRC_SIZE" -ne "$DST_SIZE" ]; then
-          echo "❌ Size mismatch after copy"
+          echo "? Size mismatch after copy"
           echo "  Source: $SRC_SIZE bytes"
           echo "  Dest  : $DST_SIZE bytes"
           exit 1
         fi
 
-        echo "✅ Copy verified — sizes match: $DST_SIZE bytes"
+        echo "? Copy verified -- sizes match: $DST_SIZE bytes"
       args:
         executable: /bin/bash
       register: rpm_copy_result
@@ -128,7 +128,7 @@
     - name: "Log copy failure"
       lineinfile:
         path: "{{ build_pcf_log }}"
-        line: "[PUBLISH][COPY_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }} — {{ ansible_date_time.iso8601 }}"
+        line: "[PUBLISH][COPY_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }} -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
       ignore_errors: yes
 
@@ -189,12 +189,12 @@
     - name: "Display checksums"
       debug:
         msg: |
-          ✅ Checksums generated:
-          ├─ MD5    : {{ rpm_md5_checksum.stdout }}
-          └─ SHA256 : {{ rpm_sha256_checksum.stdout }}
+          ? Checksums generated:
+          +- MD5    : {{ rpm_md5_checksum.stdout }}
+          +- SHA256 : {{ rpm_sha256_checksum.stdout }}
 
   rescue:
-    - name: "⚠️  Checksum generation warning"
+    - name: "?  Checksum generation warning"
       debug:
         msg: "Could not generate checksums (non-critical)"
 
@@ -216,7 +216,7 @@
     - name: "Fail if RPM not found in release dir"
       fail:
         msg: |
-          ❌ Published RPM not found in release directory
+          ? Published RPM not found in release directory
           Expected: {{ build_pcf_releases_dir }}/{{ src_rpm_filename }}
       when: published_rpms.matched == 0
 
@@ -232,7 +232,7 @@
     - name: "Display published RPM details"
       debug:
         msg: |
-          ✅ RPM Published Successfully
+          ? RPM Published Successfully
           
           Location: {{ published_rpms.files[0].path }}
           Size    : {{ published_rpms.files[0].size }} bytes
@@ -245,7 +245,7 @@
     - name: "Log verification failure"
       lineinfile:
         path: "{{ build_pcf_log }}"
-        line: "[PUBLISH][VERIFY_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }} — {{ ansible_date_time.iso8601 }}"
+        line: "[PUBLISH][VERIFY_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }} -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
       ignore_errors: yes
 
@@ -274,7 +274,7 @@
         for rpm in {{ old_releases.files | map(attribute='path') | join(' ') }}; do
           [ -f "$rpm" ] && mv "$rpm" "$rpm.archived"
         done
-        echo "✅ Old RPMs archived"
+        echo "? Old RPMs archived"
       args:
         executable: /bin/bash
       when: 
@@ -284,7 +284,7 @@
       changed_when: old_releases.matched > 0
 
   rescue:
-    - name: "⚠️  Old release cleanup warning"
+    - name: "?  Old release cleanup warning"
       debug:
         msg: "Could not archive old releases (non-critical)"
 
@@ -311,14 +311,14 @@
     - name: "Display completion summary"
       debug:
         msg: |
-          ✅ PCF BUILD AND PUBLISH COMPLETE
+          ? PCF BUILD AND PUBLISH COMPLETE
           
-          📦 Artifact Information:
-          ├─ Filename : {{ src_rpm_filename }}
-          ├─ Location : {{ build_pcf_releases_dir }}/{{ src_rpm_filename }}
-          ├─ Size     : {{ src_rpm_size }} bytes
-          ├─ Log      : {{ build_pcf_log }}
-          └─ Status   : Ready for deployment
+          ? Artifact Information:
+          +- Filename : {{ src_rpm_filename }}
+          +- Location : {{ build_pcf_releases_dir }}/{{ src_rpm_filename }}
+          +- Size     : {{ src_rpm_size }} bytes
+          +- Log      : {{ build_pcf_log }}
+          +- Status   : Ready for deployment
           
           Next Steps:
           - Verify RPM: rpm -qp {{ build_pcf_releases_dir }}/{{ src_rpm_filename }}
@@ -327,7 +327,7 @@
 
   rescue:
     - debug:
-        msg: "⚠️  Final logging encountered non-critical issues"
+        msg: "?  Final logging encountered non-critical issues"
 
   tags:
     - publish

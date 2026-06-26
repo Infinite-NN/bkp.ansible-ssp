@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# Post-Reboot — Update RPMs in SSP Structure
+# Post-Reboot -- Update RPMs in SSP Structure
 # Copies downloaded security RPMs into SSP newRPMs directories
 # =============================================================
 
@@ -15,11 +15,11 @@
     - name: "Display RPM update configuration"
       debug:
         msg: |
-          📦 RPM Update Configuration:
-          ├─ SSP Path        : {{ ssp_path | default('(to be discovered)') }}
-          ├─ BaseOS Source   : {{ repo_baseos_path }}
-          ├─ AppStream Source: {{ repo_appstream_path }}
-          └─ Timeout        : {{ post_reboot_timeout_rpm_ops }}s
+          ? RPM Update Configuration:
+          +- SSP Path        : {{ ssp_path | default('(to be discovered)') }}
+          +- BaseOS Source   : {{ repo_baseos_path }}
+          +- AppStream Source: {{ repo_appstream_path }}
+          +- Timeout        : {{ post_reboot_timeout_rpm_ops }}s
 
   tags:
     - rpm_update
@@ -34,8 +34,8 @@
         that:
           - ssp_path is defined
           - ssp_path | length > 0
-        fail_msg: "❌ ssp_path is not defined or empty"
-        success_msg: "✅ ssp_path defined: {{ ssp_path }}"
+        fail_msg: "? ssp_path is not defined or empty"
+        success_msg: "? ssp_path defined: {{ ssp_path }}"
 
     - name: "Verify SSP installation exists"
       stat:
@@ -54,7 +54,7 @@
 
   rescue:
     - fail:
-        msg: "Prerequisite validation failed — {{ ansible_failed_result.msg }}"
+        msg: "Prerequisite validation failed -- {{ ansible_failed_result.msg }}"
 
   tags:
     - rpm_update
@@ -94,15 +94,15 @@
     - name: "Display created directory structure"
       debug:
         msg: |
-          ✅ Directory Structure Created:
-          ├─ {{ ssp_path }}/{{ ssp_new_rpms_dir }}/BaseOS/Packages
-          ├─ {{ ssp_path }}/{{ ssp_new_rpms_dir }}/AppStream/Packages
-          ├─ {{ repo_archive_base }}/BaseOS
-          └─ {{ repo_archive_base }}/AppStream
+          ? Directory Structure Created:
+          +- {{ ssp_path }}/{{ ssp_new_rpms_dir }}/BaseOS/Packages
+          +- {{ ssp_path }}/{{ ssp_new_rpms_dir }}/AppStream/Packages
+          +- {{ repo_archive_base }}/BaseOS
+          +- {{ repo_archive_base }}/AppStream
 
   rescue:
     - fail:
-        msg: "Cannot create RPM directory structure — {{ ansible_failed_result.msg }}"
+        msg: "Cannot create RPM directory structure -- {{ ansible_failed_result.msg }}"
 
   tags:
     - rpm_update
@@ -122,7 +122,7 @@
 
     - name: "Display BaseOS RPM count"
       debug:
-        msg: "🔍 Found {{ baseos_rpms.matched }} BaseOS RPMs to process"
+        msg: "? Found {{ baseos_rpms.matched }} BaseOS RPMs to process"
 
     - name: "Copy BaseOS RPMs to SSP newRPMs"
       shell: |
@@ -149,7 +149,7 @@
           [ $((count % 10)) -eq 0 ] && echo "  Processed: $count"
         done < <(find "$SRC_DIR" -name "*.rpm" -type f)
 
-        echo "✅ Total BaseOS RPMs copied: $count"
+        echo "? Total BaseOS RPMs copied: $count"
       args:
         executable: /bin/bash
       register: baseos_copy
@@ -163,7 +163,7 @@
   rescue:
     - name: "Log BaseOS copy failure"
       debug:
-        msg: "BaseOS RPM copy failed — {{ ansible_failed_result.msg }}"
+        msg: "BaseOS RPM copy failed -- {{ ansible_failed_result.msg }}"
       when: fail_on_error | default(true) | bool
 
     - fail:
@@ -188,7 +188,7 @@
 
     - name: "Display AppStream RPM count"
       debug:
-        msg: "🔍 Found {{ appstream_rpms.matched }} AppStream RPMs to process"
+        msg: "? Found {{ appstream_rpms.matched }} AppStream RPMs to process"
 
     - name: "Copy AppStream RPMs to SSP newRPMs"
       shell: |
@@ -211,7 +211,7 @@
           [ $((count % 10)) -eq 0 ] && echo "  Processed: $count"
         done < <(find "$SRC_DIR" -name "*.rpm" -type f)
 
-        echo "✅ Total AppStream RPMs copied: $count"
+        echo "? Total AppStream RPMs copied: $count"
       args:
         executable: /bin/bash
       register: appstream_copy
@@ -225,7 +225,7 @@
   rescue:
     - name: "Log AppStream copy failure"
       debug:
-        msg: "AppStream RPM copy failed — {{ ansible_failed_result.msg }}"
+        msg: "AppStream RPM copy failed -- {{ ansible_failed_result.msg }}"
 
     - fail:
         msg: "AppStream RPM processing failed"
@@ -255,9 +255,9 @@
         LINE_COUNT=$(wc -l < "$OUT")
         
         if [ "$LINE_COUNT" -ge "{{ min_rpm_count_success | default(10) }}" ]; then
-          echo "✅ InstallRPMsList rebuilt: $LINE_COUNT entries"
+          echo "? InstallRPMsList rebuilt: $LINE_COUNT entries"
         else
-          echo "⚠️  Low RPM count: $LINE_COUNT (minimum: {{ min_rpm_count_success | default(10) }})"
+          echo "?  Low RPM count: $LINE_COUNT (minimum: {{ min_rpm_count_success | default(10) }})"
         fi
       args:
         executable: /bin/bash
@@ -276,7 +276,7 @@
 
   rescue:
     - fail:
-        msg: "InstallRPMsList rebuild failed — {{ ansible_failed_result.msg }}"
+        msg: "InstallRPMsList rebuild failed -- {{ ansible_failed_result.msg }}"
 
   tags:
     - rpm_update
@@ -313,7 +313,7 @@
         
         if [ -f "$FILE" ]; then
           sort -t'|' -k1,1 "$FILE" -o "$FILE"
-          echo "✅ sbc-ssp-details sorted"
+          echo "? sbc-ssp-details sorted"
         fi
       args:
         executable: /bin/bash
@@ -322,7 +322,7 @@
 
   rescue:
     - debug:
-        msg: "⚠️  sbc-ssp-details update skipped (report may not exist)"
+        msg: "?  sbc-ssp-details update skipped (report may not exist)"
 
   tags:
     - rpm_update
@@ -349,12 +349,12 @@
     - name: "Display RPM summary"
       debug:
         msg: |
-          ✅ RPM UPDATE COMPLETE
+          ? RPM UPDATE COMPLETE
           
-          📦 RPM Summary:
+          ? RPM Summary:
           {{ rpm_counts.stdout }}
           
-          ✅ Status: Ready for SSP repackaging
+          ? Status: Ready for SSP repackaging
 
     - name: "Log RPM update success"
       lineinfile:

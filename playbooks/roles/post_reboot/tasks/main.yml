@@ -1,22 +1,22 @@
 ---
 # =============================================================
-# Post-Reboot Role — Main Entry Point
+# Post-Reboot Role -- Main Entry Point
 # Purpose: Orchestrate all post-reboot validation & updates
 # =============================================================
 
 - name: "[POST_REBOOT] Role initialization"
   debug:
     msg: |
-      ╔════════════════════════════════════╗
-      ║   POST-REBOOT ROLE INITIALIZATION  ║
-      ╠════════════════════════════════════╣
-      ║ Host          : {{ inventory_hostname }}
-      ║ Environment   : {{ post_reboot_environment | default('unknown') }}
-      ║ Security Upd  : {{ post_reboot_run_security_updates | default(false) }}
-      ║ PCF Update    : {{ post_reboot_run_pcf_update | default(false) }}
-      ║ Boot Time     : {{ ansible_uptime_seconds | int }}s
-      ║ Load Average  : {{ ansible_load.1 }}
-      ╚════════════════════════════════════╝
+      ??????????????????????????????????????
+      ?   POST-REBOOT ROLE INITIALIZATION  ?
+      ??????????????????????????????????????
+      ? Host          : {{ inventory_hostname }}
+      ? Environment   : {{ post_reboot_environment | default('unknown') }}
+      ? Security Upd  : {{ post_reboot_run_security_updates | default(false) }}
+      ? PCF Update    : {{ post_reboot_run_pcf_update | default(false) }}
+      ? Boot Time     : {{ ansible_uptime_seconds | int }}s
+      ? Load Average  : {{ ansible_load.1 }}
+      ??????????????????????????????????????
   tags:
     - always
 
@@ -83,11 +83,11 @@
     - name: "Log system validation success"
       lineinfile:
         path: "{{ post_reboot_log }}"
-        line: "[SYSTEM] ✅ System validation passed — {{ ansible_date_time.iso8601 }}"
+        line: "[SYSTEM] ? System validation passed -- {{ ansible_date_time.iso8601 }}"
         insertafter: "Post-Reboot Tasks:"
 
   rescue:
-    - name: "❌ System validation failed"
+    - name: "? System validation failed"
       fail:
         msg: "System did not come up properly after reboot"
 
@@ -159,7 +159,7 @@
     - name: "Log ssp_path discovery"
       lineinfile:
         path: "{{ post_reboot_log }}"
-        line: "[SSP_PATH] ✅ Discovered: {{ ssp_path }} — {{ ansible_date_time.iso8601 }}"
+        line: "[SSP_PATH] ? Discovered: {{ ssp_path }} -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
 
     - name: "Display ssp_path"
@@ -167,15 +167,15 @@
         msg: "SSP Path: {{ ssp_path }}"
 
   rescue:
-    - name: "❌ ssp_path discovery failed"
+    - name: "? ssp_path discovery failed"
       lineinfile:
         path: "{{ post_reboot_log }}"
-        line: "[SSP_PATH] ❌ FAILED — {{ ansible_date_time.iso8601 }}"
+        line: "[SSP_PATH] ? FAILED -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
 
     - name: "Fail with error"
       fail:
-        msg: "Cannot determine ssp_path — SSP installation may be incomplete"
+        msg: "Cannot determine ssp_path -- SSP installation may be incomplete"
 
   tags:
     - post_reboot
@@ -272,14 +272,14 @@
     - name: "Log post-reboot completion"
       lineinfile:
         path: "{{ post_reboot_log }}"
-        line: "[COMPLETE] ✅ POST-REBOOT PHASE COMPLETE — {{ ansible_date_time.iso8601 }}"
+        line: "[COMPLETE] ? POST-REBOOT PHASE COMPLETE -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
 
   rescue:
-    - name: "⚠️  Final verification warning"
+    - name: "?  Final verification warning"
       lineinfile:
         path: "{{ post_reboot_log }}"
-        line: "[COMPLETE] ⚠️  Some verification tasks encountered issues — {{ ansible_date_time.iso8601 }}"
+        line: "[COMPLETE] ?  Some verification tasks encountered issues -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
 
   tags:
@@ -289,7 +289,7 @@
 - name: "[POST_REBOOT] Display completion summary"
   debug:
     msg: |
-      ✅ POST-REBOOT ROLE COMPLETE
+      ? POST-REBOOT ROLE COMPLETE
       Log: {{ post_reboot_log }}
       SSP Path: {{ ssp_path }}
   tags:

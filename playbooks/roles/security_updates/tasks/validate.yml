@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# Security Updates — Validate Downloaded RPMs
+# Security Updates -- Validate Downloaded RPMs
 # Verifies integrity and consistency of security packages
 # =============================================================
 
@@ -15,10 +15,10 @@
     - name: "Display validation configuration"
       debug:
         msg: |
-          ✅ Security RPM Validation Configuration:
-          ├─ Verify Signatures: {{ verify_rpm_signatures }}
-          ├─ Verify Integrity : {{ verify_rpm_integrity }}
-          └─ Min RPM Count    : {{ min_security_rpm_count }}
+          ? Security RPM Validation Configuration:
+          +- Verify Signatures: {{ verify_rpm_signatures }}
+          +- Verify Integrity : {{ verify_rpm_integrity }}
+          +- Min RPM Count    : {{ min_security_rpm_count }}
 
   tags:
     - sec_validate
@@ -41,19 +41,19 @@
         that:
           - all_security_rpms.matched >= min_security_rpm_count | int
         fail_msg: |
-          ❌ Insufficient security RPMs downloaded
+          ? Insufficient security RPMs downloaded
           Found   : {{ all_security_rpms.matched }}
           Required: {{ min_security_rpm_count }}
-        success_msg: "✅ RPM count validation passed: {{ all_security_rpms.matched }} RPM(s)"
+        success_msg: "? RPM count validation passed: {{ all_security_rpms.matched }} RPM(s)"
       when: not fail_if_no_updates | bool or all_security_rpms.matched > 0
 
     - name: "Display validation results"
       debug:
         msg: |
-          📦 RPM Validation Results:
-          ├─ Total RPMs    : {{ all_security_rpms.matched }}
-          ├─ Sample Files  : {{ all_security_rpms.files[:3] | map(attribute='path') | map('basename') | list | join(', ') }}
-          └─ Status        : VALID
+          ? RPM Validation Results:
+          +- Total RPMs    : {{ all_security_rpms.matched }}
+          +- Sample Files  : {{ all_security_rpms.files[:3] | map(attribute='path') | map('basename') | list | join(', ') }}
+          +- Status        : VALID
 
   rescue:
     - name: "Log validation failure"
@@ -64,7 +64,7 @@
       ignore_errors: yes
 
     - fail:
-        msg: "Security RPM validation failed — {{ ansible_failed_result.msg }}"
+        msg: "Security RPM validation failed -- {{ ansible_failed_result.msg }}"
 
   tags:
     - sec_validate
@@ -87,15 +87,15 @@
             COUNT=$((COUNT + 1))
           else
             ERRORS=$((ERRORS + 1))
-            echo "⚠️  Invalid RPM: {{ rpm.path | basename }}"
+            echo "?  Invalid RPM: {{ rpm.path | basename }}"
           fi
         }
         {% endfor %}
         
         if [ $ERRORS -eq 0 ]; then
-          echo "✅ All {{ COUNT }} RPMs are valid"
+          echo "? All {{ COUNT }} RPMs are valid"
         else
-          echo "⚠️  Found $ERRORS invalid RPM(s)"
+          echo "?  Found $ERRORS invalid RPM(s)"
           exit 1
         fi
       args:
@@ -105,7 +105,7 @@
 
   rescue:
     - debug:
-        msg: "⚠️  RPM integrity check encountered issues (non-blocking)"
+        msg: "?  RPM integrity check encountered issues (non-blocking)"
 
   tags:
     - sec_validate
@@ -124,12 +124,12 @@
     - name: "Display validation summary"
       debug:
         msg: |
-          ✅ SECURITY RPM VALIDATION COMPLETE
+          ? SECURITY RPM VALIDATION COMPLETE
           
-          📊 Summary:
-          ├─ Total RPMs    : {{ all_security_rpms.matched }}
-          ├─ Status        : VALID
-          └─ Next Step     : Generate security report
+          ? Summary:
+          +- Total RPMs    : {{ all_security_rpms.matched }}
+          +- Status        : VALID
+          +- Next Step     : Generate security report
           
           Proceeding to report generation...
 

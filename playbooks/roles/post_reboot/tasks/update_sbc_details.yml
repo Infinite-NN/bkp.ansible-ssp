@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# Post-Reboot — Update sbc-ssp-details with Security Info
+# Post-Reboot -- Update sbc-ssp-details with Security Info
 # APPEND ONLY: adds newly downloaded RPMs to security details
 # Format: pkg-ver.arch | Severity | Advisory | CVEs
 # =============================================================
@@ -16,10 +16,10 @@
     - name: "Display configuration"
       debug:
         msg: |
-          📋 sbc-ssp-details Update Configuration:
-          ├─ SSP Path     : {{ ssp_path }}
-          ├─ Source RPMs  : {{ repo_baseos_path }}, {{ repo_appstream_path }}
-          └─ Output File  : {{ ssp_path }}/{{ ssp_new_rpms_dir }}/{{ ssp_details_file }}
+          ? sbc-ssp-details Update Configuration:
+          +- SSP Path     : {{ ssp_path }}
+          +- Source RPMs  : {{ repo_baseos_path }}, {{ repo_appstream_path }}
+          +- Output File  : {{ ssp_path }}/{{ ssp_new_rpms_dir }}/{{ ssp_details_file }}
 
   tags:
     - details
@@ -35,7 +35,7 @@
           - ssp_path is defined
           - ssp_path | length > 0
         fail_msg: "ssp_path is not defined"
-        success_msg: "✅ ssp_path validated"
+        success_msg: "? ssp_path validated"
 
     - name: "Verify SSP installation exists"
       stat:
@@ -53,7 +53,7 @@
 
   rescue:
     - fail:
-        msg: "Prerequisite validation failed — {{ ansible_failed_result.msg }}"
+        msg: "Prerequisite validation failed -- {{ ansible_failed_result.msg }}"
 
   tags:
     - details
@@ -116,10 +116,10 @@
     - name: "Display discovered RPM counts"
       debug:
         msg: |
-          🔍 Discovered RPMs:
-          ├─ BaseOS   : {{ new_baseos_rpms.matched }}
-          ├─ AppStream: {{ new_appstream_rpms.matched }}
-          └─ Total    : {{ new_baseos_rpms.matched + new_appstream_rpms.matched }}
+          ? Discovered RPMs:
+          +- BaseOS   : {{ new_baseos_rpms.matched }}
+          +- AppStream: {{ new_appstream_rpms.matched }}
+          +- Total    : {{ new_baseos_rpms.matched + new_appstream_rpms.matched }}
 
     - name: "Combine all downloaded RPMs for processing"
       set_fact:
@@ -227,7 +227,7 @@
 
   rescue:
     - debug:
-        msg: "⚠️  Security info generation encountered issues (will continue)"
+        msg: "?  Security info generation encountered issues (will continue)"
 
   tags:
     - details
@@ -262,12 +262,12 @@
     - name: "Display completion summary"
       debug:
         msg: |
-          ✅ sbc-ssp-details UPDATE COMPLETE
+          ? sbc-ssp-details UPDATE COMPLETE
           
-          📋 File Summary:
-          ├─ Location : {{ ssp_path }}/{{ ssp_new_rpms_dir }}/{{ ssp_details_file }}
-          ├─ Entries  : {{ details_entry_count.stdout }}
-          └─ Status   : Ready for repackaging
+          ? File Summary:
+          +- Location : {{ ssp_path }}/{{ ssp_new_rpms_dir }}/{{ ssp_details_file }}
+          +- Entries  : {{ details_entry_count.stdout }}
+          +- Status   : Ready for repackaging
           
           Next: Update sbc-release files...
 

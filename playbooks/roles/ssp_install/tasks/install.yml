@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# SSP Install — Installation Task
+# SSP Install -- Installation Task
 # Executes patchSBC and reboots system
 # =============================================================
 
@@ -25,12 +25,12 @@
     - name: "Display installation configuration"
       debug:
         msg: |
-          ⚙️  SSP Installation Configuration:
-          ├─ patchSBC Script: {{ patchsbc_script }}
-          ├─ TGZ Package    : {{ tgz_path | basename }}
-          ├─ Python Env     : {{ patchsbc_venv_python }}
-          ├─ Timeout        : {{ timeout_patchsbc }}s
-          └─ Silent Mode    : {{ patchsbc_silent_flag }}
+          ?  SSP Installation Configuration:
+          +- patchSBC Script: {{ patchsbc_script }}
+          +- TGZ Package    : {{ tgz_path | basename }}
+          +- Python Env     : {{ patchsbc_venv_python }}
+          +- Timeout        : {{ timeout_patchsbc }}s
+          +- Silent Mode    : {{ patchsbc_silent_flag }}
 
   tags:
     - install
@@ -61,15 +61,15 @@
     - name: "Display pre-install validation results"
       debug:
         msg: |
-          ✅ Pre-Installation Checks:
-          ├─ patchSBC script : OK
-          ├─ TGZ package     : OK  
-          └─ Python venv     : OK
+          ? Pre-Installation Checks:
+          +- patchSBC script : OK
+          +- TGZ package     : OK  
+          +- Python venv     : OK
 
   rescue:
     - fail:
         msg: |
-          ❌ Pre-installation validation failed
+          ? Pre-installation validation failed
           patchSBC exists: {{ patchsbc_check.stat.exists | default(false) }}
           TGZ exists     : {{ tgz_check.stat.exists | default(false) }}
           Python venv    : {{ venv_check.stat.exists | default(false) }}
@@ -133,7 +133,7 @@
 
     - fail:
         msg: |
-          ❌ patchSBC execution failed
+          ? patchSBC execution failed
           RC: {{ patchsbc_result.rc | default('UNKNOWN') }}
           Error: {{ ansible_failed_result.msg }}
 
@@ -184,7 +184,7 @@
 
     - name: "Confirm installation success"
       debug:
-        msg: "✅ SSP installation completed successfully — System reboot pending"
+        msg: "? SSP installation completed successfully -- System reboot pending"
 
   rescue:
     - name: "Collect patch.log for diagnosis"
@@ -205,7 +205,7 @@
 
     - fail:
         msg: |
-          ❌ Installation monitoring failed
+          ? Installation monitoring failed
           {{ patch_log_excerpt.stdout | default('Unknown error') }}
 
   tags:
@@ -235,11 +235,11 @@
         that:
           - boot_id_before.stdout | trim != boot_id_after.stdout | trim
         fail_msg: |
-          ❌ Boot ID unchanged — reboot may not have occurred
+          ? Boot ID unchanged -- reboot may not have occurred
           Before: {{ boot_id_before.stdout | trim }}
           After : {{ boot_id_after.stdout | trim }}
         success_msg: |
-          ✅ System reboot verified
+          ? System reboot verified
           Before: {{ boot_id_before.stdout | trim }}
           After : {{ boot_id_after.stdout | trim }}
 
@@ -261,7 +261,7 @@
       ignore_errors: yes
 
     - fail:
-        msg: "System reboot failed or system not responsive — {{ ansible_failed_result.msg }}"
+        msg: "System reboot failed or system not responsive -- {{ ansible_failed_result.msg }}"
 
   tags:
     - install
@@ -279,7 +279,7 @@
         PATTERN="{{ gui_check_pattern }}"
         
         if [ ! -x "$SCRIPT" ]; then
-          echo "⚠️  IPCS script not executable, status may fail gracefully"
+          echo "?  IPCS script not executable, status may fail gracefully"
         fi
         
         # Get current status

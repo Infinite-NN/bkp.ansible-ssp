@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# Build PCF — Compilation and Packaging
+# Build PCF -- Compilation and Packaging
 # =============================================================
 
 - name: "[BUILD] Pre-build preparation"
@@ -21,7 +21,7 @@
         set -euo pipefail
         mkdir -p "{{ build_pcf_build_dir }}"
         cp -rv "{{ build_pcf_svn_repo }}"/* "{{ build_pcf_build_dir }}/"
-        echo "✅ Repository copied to build directory"
+        echo "? Repository copied to build directory"
       args:
         executable: /bin/bash
       changed_when: true
@@ -36,12 +36,12 @@
     - name: "Fail if build directory is empty"
       fail:
         msg: |
-          ❌ Build directory copy failed — no files found in {{ build_pcf_build_dir }}
+          ? Build directory copy failed -- no files found in {{ build_pcf_build_dir }}
       when: build_files.matched == 0
 
     - name: "Log build directory contents"
       debug:
-        msg: "✅ Build directory populated with {{ build_files.matched }} files"
+        msg: "? Build directory populated with {{ build_files.matched }} files"
 
   rescue:
     - name: "Log build preparation failure"
@@ -64,7 +64,7 @@
     - name: "Log build start"
       lineinfile:
         path: "{{ build_pcf_log }}"
-        line: "[BUILD][START] {{ ansible_date_time.iso8601 }} — Building {{ build_pcf_branch }} with kernel {{ chroot_kernel_path | basename }}"
+        line: "[BUILD][START] {{ ansible_date_time.iso8601 }} -- Building {{ build_pcf_branch }} with kernel {{ chroot_kernel_path | basename }}"
         insertafter: EOF
 
     - name: "Capture build start timestamp"
@@ -79,7 +79,7 @@
 
     - name: "Fail if chroot not found"
       fail:
-        msg: "❌ Chroot environment not found at /sandbox/rhel810"
+        msg: "? Chroot environment not found at /sandbox/rhel810"
       when: not chroot_stat.stat.exists
 
     - name: "Validate bambooBuildRpms script"
@@ -89,7 +89,7 @@
 
     - name: "Fail if bambooBuildRpms not found"
       fail:
-        msg: "❌ Build script not found at {{ build_pcf_build_dir }}/icu/buildtools/bambooBuildRpms"
+        msg: "? Build script not found at {{ build_pcf_build_dir }}/icu/buildtools/bambooBuildRpms"
       when: not bamboo_script_stat.stat.exists
 
     - name: "Verify kernel in chroot"
@@ -99,14 +99,14 @@
 
     - name: "Fail if kernel not found in chroot"
       fail:
-        msg: "❌ Kernel path not found in chroot: /sandbox/rhel810{{ chroot_kernel_path }}"
+        msg: "? Kernel path not found in chroot: /sandbox/rhel810{{ chroot_kernel_path }}"
       when: not chroot_kernel_verify.stat.exists
 
     - name: "Run PCF build via chroot + bambooBuildRpms"
       shell: |
         set -euo pipefail
 
-        echo "🔨 Starting PCF build..."
+        echo "? Starting PCF build..."
         echo "Branch          : {{ build_pcf_branch }}"
         echo "Build Number    : {{ build_pcf_build_no }}"
         echo "Module Version  : {{ build_pcf_module_ver }}"
@@ -129,7 +129,7 @@
           2>&1
 
         echo ""
-        echo "✅ Build completed successfully"
+        echo "? Build completed successfully"
       args:
         executable: /bin/bash
         chdir: "{{ build_pcf_build_dir }}"
@@ -161,24 +161,24 @@
         echo "=== Chroot kernel verification ==="
         CHROOT_KERNEL="/sandbox/rhel810{{ chroot_kernel_path | default('') }}"
         if [ -d "$CHROOT_KERNEL" ]; then
-          echo "✅ Kernel found at: $CHROOT_KERNEL"
+          echo "? Kernel found at: $CHROOT_KERNEL"
           ls -la "$CHROOT_KERNEL" | head -10
         else
-          echo "❌ Kernel NOT found at: $CHROOT_KERNEL"
+          echo "? Kernel NOT found at: $CHROOT_KERNEL"
         fi
         echo ""
         echo "=== Last 50 lines of build directory ==="
         ls -ltra "{{ build_pcf_build_dir }}" 2>/dev/null | tail -50 || echo "Cannot list directory"
         echo ""
         echo "=== Chroot status ==="
-        [ -d /sandbox/rhel810 ] && echo "✅ Chroot exists" || echo "❌ Chroot missing"
+        [ -d /sandbox/rhel810 ] && echo "? Chroot exists" || echo "? Chroot missing"
         echo ""
         echo "=== bambooBuildRpms status ==="
         if [ -f "{{ build_pcf_build_dir }}/icu/buildtools/bambooBuildRpms" ]; then
-          echo "✅ Script found"
+          echo "? Script found"
           ls -la "{{ build_pcf_build_dir }}/icu/buildtools/bambooBuildRpms"
         else
-          echo "❌ Script not found"
+          echo "? Script not found"
         fi
       register: build_debug
       ignore_errors: yes
@@ -186,7 +186,7 @@
     - name: "Log build failure details"
       lineinfile:
         path: "{{ build_pcf_log }}"
-        line: "[BUILD][FAILED] {{ ansible_failed_result.msg | default('Unknown error') }} — {{ ansible_date_time.iso8601 }}"
+        line: "[BUILD][FAILED] {{ ansible_failed_result.msg | default('Unknown error') }} -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
       ignore_errors: yes
 
@@ -195,7 +195,7 @@
 
     - fail:
         msg: |
-          ❌ PCF build failed for {{ build_pcf_branch }}
+          ? PCF build failed for {{ build_pcf_branch }}
           Build Dir: {{ build_pcf_build_dir }}
           Kernel (chroot): {{ chroot_kernel_path | default('NOT_SET') }}
           See {{ build_pcf_log }} for details
@@ -234,7 +234,7 @@
     - name: "Verify RPM was generated"
       fail:
         msg: |
-          ❌ No PCF RPM generated for {{ build_pcf_branch }}
+          ? No PCF RPM generated for {{ build_pcf_branch }}
           Searched locations:
           - {{ build_pcf_build_dir }}
           - {{ build_pcf_build_dir }}/dist
@@ -251,7 +251,7 @@
     - name: "Display found RPM"
       debug:
         msg: |
-          ✅ PCF RPM located:
+          ? PCF RPM located:
           Path: {{ build_pcf_rpm_path.path }}
           Size: {{ build_pcf_rpm_path.size }} bytes
           Modified: {{ build_pcf_rpm_path.mtime | int | timestamp_to_date }}
@@ -263,18 +263,18 @@
         
         # Check file exists and is readable
         if [ ! -r "$RPM_FILE" ]; then
-          echo "❌ RPM file not readable: $RPM_FILE"
+          echo "? RPM file not readable: $RPM_FILE"
           exit 1
         fi
         
         # Verify RPM magic bytes (ED AB EE DB)
         MAGIC=$(xxd -p -l 4 "$RPM_FILE")
         if [ "$MAGIC" != "edabeedd" ] && [ "$MAGIC" != "edabeedb" ]; then
-          echo "❌ Not a valid RPM file (wrong magic bytes: $MAGIC)"
+          echo "? Not a valid RPM file (wrong magic bytes: $MAGIC)"
           exit 1
         fi
         
-        echo "✅ RPM file structure is valid"
+        echo "? RPM file structure is valid"
       args:
         executable: /bin/bash
       register: rpm_validation
@@ -299,21 +299,21 @@
     - name: "Display RPM metadata"
       debug:
         msg: |
-          📦 RPM Metadata:
-          ├─ Name    : {{ rpm_name }}
-          ├─ Version : {{ rpm_version }}
-          ├─ Release : {{ rpm_release }}
-          └─ Arch    : {{ rpm_arch }}
+          ? RPM Metadata:
+          +- Name    : {{ rpm_name }}
+          +- Version : {{ rpm_version }}
+          +- Release : {{ rpm_release }}
+          +- Arch    : {{ rpm_arch }}
 
     - name: "Validate RPM version matches branch"
       assert:
         that:
           - rpm_version == build_pcf_version
         fail_msg: |
-          ❌ RPM version mismatch
+          ? RPM version mismatch
           Expected : {{ build_pcf_version }}
           Got      : {{ rpm_version }}
-        success_msg: "✅ RPM version matches branch: {{ rpm_version }}"
+        success_msg: "? RPM version matches branch: {{ rpm_version }}"
 
     - name: "Generate RPM checksum"
       shell: |
@@ -378,10 +378,10 @@
     - name: "Display build success summary"
       debug:
         msg: |
-          ✅ BUILD SUCCESSFUL
-          ╔════════════════════════════════════════╗
-          ║  PCF Module Built Successfully         ║
-          ╚════════════════════════════════════════╝
+          ? BUILD SUCCESSFUL
+          ??????????????????????????????????????????
+          ?  PCF Module Built Successfully         ?
+          ??????????????????????????????????????????
           Branch      : {{ build_pcf_branch }}
           Build #     : {{ build_pcf_build_no }}
           Module Ver  : {{ build_pcf_module_ver }}
@@ -403,7 +403,7 @@
       ignore_errors: yes
 
     - fail:
-        msg: "RPM validation failed — see {{ build_pcf_log }} for details"
+        msg: "RPM validation failed -- see {{ build_pcf_log }} for details"
 
   tags:
     - build

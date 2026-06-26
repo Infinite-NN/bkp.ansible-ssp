@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# Build PCF Role — Handlers
+# Build PCF Role -- Handlers
 # Handlers are triggered by notify: statements in tasks.
 # Handlers run once at end of play, not immediately.
 #
@@ -10,9 +10,9 @@
 # - Always include error handling
 # =============================================================
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Cleanup Handlers
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 - name: cleanup build directory on success
   notify: "cleanup build directory"
@@ -25,12 +25,12 @@
     - name: "Log cleanup completion"
       lineinfile:
         path: "{{ build_pcf_log }}"
-        line: "[CLEANUP][BUILD_DIR] Removed — {{ ansible_date_time.iso8601 }}"
+        line: "[CLEANUP][BUILD_DIR] Removed -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
       ignore_errors: yes
 
   rescue:
-    - name: "⚠️  Build directory cleanup warning"
+    - name: "?  Build directory cleanup warning"
       debug:
         msg: "Could not remove build directory {{ build_pcf_build_dir }} (non-critical)"
 
@@ -52,12 +52,12 @@
     - name: "Log kernel cleanup completion"
       lineinfile:
         path: "{{ build_pcf_log }}"
-        line: "[CLEANUP][KERNEL] Work dir removed — {{ ansible_date_time.iso8601 }}"
+        line: "[CLEANUP][KERNEL] Work dir removed -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
       ignore_errors: yes
 
   rescue:
-    - name: "⚠️  Kernel directory cleanup warning"
+    - name: "?  Kernel directory cleanup warning"
       debug:
         msg: "Could not remove kernel work directory (non-critical)"
 
@@ -89,12 +89,12 @@
     - name: "Log staged RPM removal"
       lineinfile:
         path: "{{ build_pcf_log }}"
-        line: "[CLEANUP][KERNEL_SANDBOX] {{ staged_kernel_rpms.matched | default(0) }} RPM(s) removed — {{ ansible_date_time.iso8601 }}"
+        line: "[CLEANUP][KERNEL_SANDBOX] {{ staged_kernel_rpms.matched | default(0) }} RPM(s) removed -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
       ignore_errors: yes
 
   rescue:
-    - name: "⚠️  Sandbox cleanup warning"
+    - name: "?  Sandbox cleanup warning"
       debug:
         msg: "Could not clean sandbox temp directory (non-critical)"
 
@@ -125,12 +125,12 @@
     - name: "Log stale RPM removal"
       lineinfile:
         path: "{{ build_pcf_log }}"
-        line: "[CLEANUP][STALE_RPMS] Removed {{ stale_pcf_rpms.matched | default(0) }} old RPM(s) — {{ ansible_date_time.iso8601 }}"
+        line: "[CLEANUP][STALE_RPMS] Removed {{ stale_pcf_rpms.matched | default(0) }} old RPM(s) -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
       ignore_errors: yes
 
   rescue:
-    - name: "⚠️  Stale RPM cleanup warning"
+    - name: "?  Stale RPM cleanup warning"
       debug:
         msg: "Could not remove all stale RPMs (non-critical)"
 
@@ -162,12 +162,12 @@
     - name: "Log permission restore"
       lineinfile:
         path: "{{ build_pcf_log }}"
-        line: "[CLEANUP][PERMS] Repository permissions restored — {{ ansible_date_time.iso8601 }}"
+        line: "[CLEANUP][PERMS] Repository permissions restored -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
       ignore_errors: yes
 
   rescue:
-    - name: "⚠️  Permission restore warning"
+    - name: "?  Permission restore warning"
       debug:
         msg: "Could not restore repository permissions (check manually)"
 
@@ -177,9 +177,9 @@
 
 
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Logging Handlers
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 - name: log build failure
   notify: "log build failure"
@@ -260,9 +260,9 @@
     - logging
     - logging_summary
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # Notification Handlers
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 
 - name: notify build completion
   notify: "notify build completion"
@@ -270,18 +270,18 @@
     - name: "Log notification trigger"
       lineinfile:
         path: "{{ build_pcf_log }}"
-        line: "[NOTIFY] Build completion notification triggered — {{ ansible_date_time.iso8601 }}"
+        line: "[NOTIFY] Build completion notification triggered -- {{ ansible_date_time.iso8601 }}"
         insertafter: EOF
       ignore_errors: yes
 
     - name: "Display notification message"
       debug:
         msg: |
-          📢 BUILD COMPLETION NOTIFICATION
-          ├─ Status  : Complete
-          ├─ Branch  : {{ build_pcf_branch }}
-          ├─ Build   : {{ build_pcf_build_no }}
-          └─ Log     : {{ build_pcf_log }}
+          ? BUILD COMPLETION NOTIFICATION
+          +- Status  : Complete
+          +- Branch  : {{ build_pcf_branch }}
+          +- Build   : {{ build_pcf_build_no }}
+          +- Log     : {{ build_pcf_log }}
 
   rescue:
     - debug:

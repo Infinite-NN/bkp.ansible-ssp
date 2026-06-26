@@ -15,7 +15,7 @@
 
 - name: "Skip if no sbc-release found"
   debug:
-    msg: "⚠️  No sbc-release found in {{ rel_dir_item.path | basename }}"
+    msg: "?  No sbc-release found in {{ rel_dir_item.path | basename }}"
   when: sbc_release_files.matched == 0
 
 - name: "Process sbc-release file"
@@ -74,7 +74,7 @@
         mv -f "$TMPFILE" "$FILE"
 
         echo "Updated {{ rel_dir_item.path | basename }}/sbc-release"
-        echo "SSP_NUMBER: {{ current_ssp_number }} → {{ new_ssp_number }}"
+        echo "SSP_NUMBER: {{ current_ssp_number }} -> {{ new_ssp_number }}"
       args:
         executable: /bin/bash
       register: update_result
@@ -90,7 +90,7 @@
 
     - debug:
         msg: |
-          ✅ sbc-release updated:
+          ? sbc-release updated:
           {{ verify_result.stdout_lines }}
 
   when: sbc_release_files.matched > 0

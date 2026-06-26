@@ -1,6 +1,6 @@
 ---
 # =============================================================
-# Security Updates — Download Security RPMs
+# Security Updates -- Download Security RPMs
 # Downloads critical and important security updates
 # =============================================================
 
@@ -15,12 +15,12 @@
     - name: "Display download configuration"
       debug:
         msg: |
-          📥 Security RPM Download Configuration:
-          ├─ BaseOS Repo     : {{ dnf_repo_baseos }}
-          ├─ AppStream Repo  : {{ dnf_repo_appstream }}
-          ├─ Destination     : {{ security_rpms_download_dir }}
-          ├─ Only Security   : {{ security_only }}
-          └─ Timeout         : {{ download_timeout }}s
+          ? Security RPM Download Configuration:
+          +- BaseOS Repo     : {{ dnf_repo_baseos }}
+          +- AppStream Repo  : {{ dnf_repo_appstream }}
+          +- Destination     : {{ security_rpms_download_dir }}
+          +- Only Security   : {{ security_only }}
+          +- Timeout         : {{ download_timeout }}s
 
   tags:
     - sec_download
@@ -40,18 +40,18 @@
         that:
           - enabled_repos.stdout is regex(dnf_repo_baseos)
         fail_msg: "BaseOS repository not found in enabled repos"
-        success_msg: "✅ BaseOS repository enabled"
+        success_msg: "? BaseOS repository enabled"
 
     - name: "Check AppStream repository"
       assert:
         that:
           - enabled_repos.stdout is regex(dnf_repo_appstream)
         fail_msg: "AppStream repository not found in enabled repos"
-        success_msg: "✅ AppStream repository enabled"
+        success_msg: "? AppStream repository enabled"
 
   rescue:
     - debug:
-        msg: "⚠️  Repository validation warning (will attempt download)"
+        msg: "?  Repository validation warning (will attempt download)"
 
   tags:
     - sec_download
@@ -75,7 +75,7 @@
 
   rescue:
     - debug:
-        msg: "⚠️  DNF cache rebuild issue (continuing)"
+        msg: "?  DNF cache rebuild issue (continuing)"
 
   tags:
     - sec_download
@@ -92,7 +92,7 @@
         DEST="{{ security_rpms_download_dir }}/baseos"
         mkdir -p "$DEST"
 
-        echo "⬇️  Downloading BaseOS security RPMs..."
+        echo "?  Downloading BaseOS security RPMs..."
         
         dnf download \
           --security \
@@ -105,7 +105,7 @@
           -y 2>&1 | tail -15
 
         COUNT=$(find "$DEST" -name "*.rpm" -type f 2>/dev/null | wc -l || echo 0)
-        echo "✅ BaseOS RPMs: $COUNT"
+        echo "? BaseOS RPMs: $COUNT"
       args:
         executable: /bin/bash
       register: baseos_download
@@ -121,7 +121,7 @@
 
   rescue:
     - debug:
-        msg: "⚠️  BaseOS download encountered issues"
+        msg: "?  BaseOS download encountered issues"
 
   tags:
     - sec_download
@@ -138,7 +138,7 @@
         DEST="{{ security_rpms_download_dir }}/appstream"
         mkdir -p "$DEST"
 
-        echo "⬇️  Downloading AppStream security RPMs..."
+        echo "?  Downloading AppStream security RPMs..."
         
         dnf download \
           --security \
@@ -151,7 +151,7 @@
           -y 2>&1 | tail -15
 
         COUNT=$(find "$DEST" -name "*.rpm" -type f 2>/dev/null | wc -l || echo 0)
-        echo "✅ AppStream RPMs: $COUNT"
+        echo "? AppStream RPMs: $COUNT"
       args:
         executable: /bin/bash
       register: appstream_download
@@ -167,7 +167,7 @@
 
   rescue:
     - debug:
-        msg: "⚠️  AppStream download encountered issues"
+        msg: "?  AppStream download encountered issues"
 
   tags:
     - sec_download
@@ -182,7 +182,7 @@
       shell: |
         find "{{ security_rpms_download_dir }}" -name "*.i686.rpm" -delete 2>/dev/null
         COUNT=$(find "{{ security_rpms_download_dir }}" -name "*.rpm" -type f 2>/dev/null | wc -l || echo 0)
-        echo "✅ i686 RPMs removed | Total: $COUNT"
+        echo "? i686 RPMs removed | Total: $COUNT"
       args:
         executable: /bin/bash
       changed_when: true
@@ -198,7 +198,7 @@
         find "{{ security_rpms_download_dir }}" -name "*.rpm" -type f \
           -exec cp {} "$ARCHIVE_DIR/" \; 2>/dev/null || true
 
-        echo "✅ Security RPMs archived"
+        echo "? Security RPMs archived"
       args:
         executable: /bin/bash
       changed_when: true
@@ -222,12 +222,12 @@
     - name: "Display download summary"
       debug:
         msg: |
-          ✅ SECURITY RPM DOWNLOAD COMPLETE
+          ? SECURITY RPM DOWNLOAD COMPLETE
           
-          📦 Summary:
-          ├─ Total RPMs    : {{ final_security_rpms.matched }}
-          ├─ Location      : {{ security_rpms_download_dir }}
-          └─ Archive       : {{ security_rpms_archive_dir }}
+          ? Summary:
+          +- Total RPMs    : {{ final_security_rpms.matched }}
+          +- Location      : {{ security_rpms_download_dir }}
+          +- Archive       : {{ security_rpms_archive_dir }}
           
           Next: Validate downloads...
 
