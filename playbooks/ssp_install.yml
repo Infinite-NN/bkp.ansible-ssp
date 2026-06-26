@@ -125,8 +125,6 @@
           debug:
             msg: "System reboot may still be in progress. Continuing..."
 
----
-
 - name: "Phase 2: Post-Reboot Validation & Updates"
   hosts: sbc
   become: yes
