@@ -38,6 +38,9 @@ build_pcf_script: "icu/buildtools/bambooBuildRpms"
 # Chroot binary path
 chroot_bin: "/usr/sbin/chroot"
 
+# Build environment - set from Jenkins build_environment parameter
+build_pcf_environment: "{{ build_pcf_environment | default(build_environment | default('production')) }}"
+
 # ─────────────────────────────────────────────────────────
 # Source Code Configuration
 # ─────────────────────────────────────────────────────────

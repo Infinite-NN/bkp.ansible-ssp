@@ -23,6 +23,7 @@
           Branch            : {{ build_pcf_branch }}
           Build Number      : {{ build_pcf_build_no }}
           Module Version    : {{ build_pcf_module_ver }}
+          Environment       : {{ build_pcf_environment | default(build_environment | default('production')) }}
           Host              : {{ inventory_hostname }}
 
           Build Tasks:
@@ -41,6 +42,14 @@
       debug:
         msg: "⚠️  Could not initialize log file at {{ build_pcf_log }} — continuing without logging"
 
+  tags:
+    - validate
+    - always
+
+
+- name: "[VALIDATE] Set environment variable early"
+  set_fact:
+    build_pcf_environment: "{{ build_pcf_environment | default(build_environment | default('production')) }}"
   tags:
     - validate
     - always
@@ -100,6 +109,7 @@
     - name: "Log validation passed"
       shell: |
         echo "[VALIDATE][PASSED] All variable validations successful — {{ ansible_date_time.iso8601 }}" >> "{{ build_pcf_log }}"
+        echo "[VALIDATE][ENV] Environment set to: {{ build_pcf_environment }}" >> "{{ build_pcf_log }}"
       args:
         executable: /bin/bash
       ignore_errors: yes
@@ -127,11 +137,9 @@
       set_fact:
         build_pcf_version: "{{ build_pcf_branch | regex_replace('_orion_int$', '') }}"
 
-    - name: "Set build environment variable"
+    - name: "Set and confirm build environment"
       set_fact:
-        # Use build_environment (non-reserved name from Jenkins)
-        # Falls back to pcf_environment, then to 'production'
-        build_pcf_environment: "{{ build_environment | default(pcf_environment | default('production')) }}"
+        build_pcf_environment: "{{ build_pcf_environment | default(build_environment | default('production')) }}"
 
     - name: "Set derived directory paths"
       set_fact:
@@ -212,7 +220,7 @@
       shell: |
         echo "[VALIDATE][COMPLETE] {{ ansible_date_time.iso8601 }}" >> "{{ build_pcf_log }}"
         echo "Version={{ build_pcf_version }} Branch={{ build_pcf_branch }} Build={{ build_pcf_build_no }}" >> "{{ build_pcf_log }}"
-        echo "SVN={{ build_pcf_svn_repo }} BuildDir={{ build_pcf_build_dir }} Disk={{ build_disk_avail.stdout }}GB" >> "{{ build_pcf_log }}"
+        echo "Env={{ build_pcf_environment }} SVN={{ build_pcf_svn_repo }} Disk={{ build_disk_avail.stdout }}GB" >> "{{ build_pcf_log }}"
       args:
         executable: /bin/bash
       ignore_errors: yes
