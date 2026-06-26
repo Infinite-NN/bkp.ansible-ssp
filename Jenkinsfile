@@ -178,10 +178,11 @@ pipeline {
                         if (!env.PCF_BRANCHES?.trim()) {
                             error "No PCF branches matching '10.2.1.*_orion_int' pattern found"
                         }
+                        def branches = env.PCF_BRANCHES.tokenize()
                         echo """
-                        ✅ PCF Branch Discovery: PASS
-                        Branches found (${env.PCF_BRANCHES.split(/\\s+/).size()}):
-                        ${env.PCF_BRANCHES.split(/\\s+/).join('\n')}
+                        PCF Branch Discovery: PASS
+                        Branches found (${branches.size()}):
+                        ${branches.join('\n')}
                         """
                     } catch (Exception e) {
                         echo "❌ PCF Branch Discovery: FAIL"
@@ -431,6 +432,8 @@ def validateParameters() {
 }
 
 def prepareWorkspace() {
+    deleteDir()
+
     sh '''
     set -euo pipefail
 
@@ -446,7 +449,7 @@ def prepareWorkspace() {
     fi
 
     echo "📋 Copying Ansible playbooks from backup..."
-    cp -rv ${ANSIBLE_BKP_SRC}/{inventories,playbooks,library} .
+    rsync -av --delete ${ANSIBLE_BKP_SRC}/${WORKSPACE}/
 
     if [ ! -d "inventories" ]; then
         echo "❌ ERROR: inventories directory missing after copy"
@@ -542,20 +545,20 @@ def validateAnsibleSetup() {
     ls -1 playbooks/roles/
 
     echo ""
-    echo "✅ Syntax check: playbooks/build_pcf.yml"
+    echo "🔍 Syntax check: playbooks/build_pcf.yml"
+
     ansible-playbook \
         -i ${ANSIBLE_INVENTORY}/hosts.ini \
         playbooks/build_pcf.yml \
-        --syntax-check \
-        2>&1 | grep -E "(OK|ERROR|FAILED)" || true
+        --syntax-check -vvv
 
     echo ""
-    echo "✅ Syntax check: playbooks/ssp_install.yml"
+    echo "🔍 Syntax check: playbooks/ssp_install.yml"
+
     ansible-playbook \
         -i ${ANSIBLE_INVENTORY}/hosts.ini \
         playbooks/ssp_install.yml \
-        --syntax-check \
-        2>&1 | grep -E "(OK|ERROR|FAILED)" || true
+        --syntax-check -vvv
 
     echo ""
     echo "✅ Ansible setup validation complete"
