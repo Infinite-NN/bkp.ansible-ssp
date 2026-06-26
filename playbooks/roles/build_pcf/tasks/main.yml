@@ -145,6 +145,7 @@
         executable: /bin/bash
       register: disk_free_gb
       changed_when: false
+      check_mode: no
       retries: 2
       delay: 1
       failed_when:
