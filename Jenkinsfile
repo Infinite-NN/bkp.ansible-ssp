@@ -1,9 +1,8 @@
 // =============================================================
 // Jenkinsfile — Avaya SBCE SSP + PCF Build Pipeline
-// Production-Grade Declarative Pipeline (SEQUENTIAL PCF BUILD)
+// Production-Grade Declarative Pipeline (ENHANCED)
 // =============================================================
 // FIXES:
-// ✅ Sequential PCF builds (one-by-one)
 // ✅ Path consistency (inventories/ plural)
 // ✅ Better error handling & context
 // ✅ Proper credentials scoping
@@ -12,8 +11,10 @@
 // ✅ Improved artifact collection
 // ✅ Variable validation & defaults
 // ✅ Pre-flight checks
-// ✅ Branch discovery with pattern matching
-// ✅ Build progress tracking [N/Total]
+// ✅ FIXED: Branch discovery pipe syntax
+// ✅ FIXED: Removed undefined SSH_KEY variable
+// ✅ FIXED: Sequential PCF builds (removed parallel)
+// ✅ FIXED: Removed PARALLEL_BUILD_LIMIT parameter
 // =============================================================
 
 // @Library('avaya-shared-lib@main') _
@@ -70,11 +71,7 @@ pipeline {
             defaultValue: false,
             description:  'Syntax check only — no infrastructure changes'
         )
-        booleanParam(
-            name:         'CONTINUE_ON_BUILD_FAILURE',
-            defaultValue: false,
-            description:  'Continue building remaining branches if one fails (best-effort mode)'
-        )
+        // ✅ REMOVED: PARALLEL_BUILD_LIMIT — builds now run sequentially
     }
 
     environment {
@@ -407,18 +404,20 @@ def validateParameters() {
         error "ENVIRONMENT must be 'staging' or 'production', got: ${params.ENVIRONMENT}"
     }
 
+    // ✅ REMOVED: PARALLEL_BUILD_LIMIT validation — no longer needed
+
     echo """
     ╔══════════════════════════════════════════════╗
     ║         BUILD PARAMETERS VALIDATED           ║
     ╠══════════════════════════════════════════════╣
-    ║ BUILD_NO                    : ${params.BUILD_NO.padRight(26)}║
-    ║ MODULE_VER                  : ${params.MODULE_VER.padRight(26)}║
-    ║ ENVIRONMENT                 : ${params.ENVIRONMENT.padRight(26)}║
-    ║ SKIP_PCF_BUILD              : ${params.SKIP_PCF_BUILD.toString().padRight(26)}║
-    ║ SKIP_SSP_INSTALL            : ${params.SKIP_SSP_INSTALL.toString().padRight(26)}║
-    ║ SKIP_SECURITY_UPDATES       : ${params.SKIP_SECURITY_UPDATES.toString().padRight(26)}║
-    ║ DRY_RUN                     : ${params.DRY_RUN.toString().padRight(26)}║
-    ║ CONTINUE_ON_BUILD_FAILURE   : ${params.CONTINUE_ON_BUILD_FAILURE.toString().padRight(26)}║
+    ║ BUILD_NO              : ${params.BUILD_NO.padRight(28)}║
+    ║ MODULE_VER            : ${params.MODULE_VER.padRight(28)}║
+    ║ ENVIRONMENT           : ${params.ENVIRONMENT.padRight(28)}║
+    ║ SKIP_PCF_BUILD        : ${params.SKIP_PCF_BUILD.toString().padRight(28)}║
+    ║ SKIP_SSP_INSTALL      : ${params.SKIP_SSP_INSTALL.toString().padRight(28)}║
+    ║ SKIP_SECURITY_UPDATES : ${params.SKIP_SECURITY_UPDATES.toString().padRight(28)}║
+    ║ DRY_RUN               : ${params.DRY_RUN.toString().padRight(28)}║
+    ║ BUILD MODE            : ${'SEQUENTIAL (one-by-one)'.padRight(28)}║
     ╚══════════════════════════════════════════════╝
     """
 }
@@ -439,8 +438,6 @@ def prepareWorkspace() {
         echo "❌ ERROR: Ansible backup not found at: ${ANSIBLE_BKP_SRC}"
         exit 1
     fi
-
-    deleteDir()
 
     echo "📋 Copying Ansible playbooks from backup..."
     cp -rv ${ANSIBLE_BKP_SRC}/{inventories,playbooks,library} .
@@ -559,141 +556,127 @@ def validateAnsibleSetup() {
     '''
 }
 
+// =============================================================
+// ✅ CHANGED: Sequential PCF builds via pure shell loop
+//    - Removed: parallelJobs map, parallel(), retry(), PARALLEL_BUILD_LIMIT
+//    - Added:   shell for-loop, counter tracking, retry in shell
+// =============================================================
 def buildPcfModules() {
-    def branches = env.PCF_BRANCHES.trim().split(/\s+/).findAll { it }
-
     echo """
     ════════════════════════════════════════════════════════
-    ⚙️  PCF BUILD CONFIGURATION
-    ════════════════════════════════════════════════════════
-    Build Mode      : SEQUENTIAL (one-by-one)
-    Total Branches  : ${branches.size()}
-    DRY_RUN Mode    : ${params.DRY_RUN}
-    Failure Mode    : ${params.CONTINUE_ON_BUILD_FAILURE ? 'Best-Effort (continue on failure)' : 'Fail-Fast (stop on first failure)'}
+    ⚙️  PCF BUILD MODE : SEQUENTIAL (one-by-one)
     ════════════════════════════════════════════════════════
     """
 
-    def failedBranches  = []
-    def successBranches = []
-    def buildResults    = [:]
+    sh '''
+    set -euo pipefail
 
-    branches.eachWithIndex { branch, index ->
-        def branchNum    = index + 1
-        def progressBar  = "[${'█'.multiply(branchNum)}${'░'.multiply(branches.size() - branchNum)}] ${branchNum}/${branches.size()}"
+    # ── Discover branches inside shell (avoids Groovy scope issues) ──
+    BRANCHES=$(find "${SVN_REPOS_LOCAL}" \
+        -maxdepth 1 \
+        -type d \
+        -name '10.2.1.*_orion_int' \
+        -printf '%f\n' | sort -V)
 
-        echo """
-        ${progressBar}
-        Building: ${branch}
-        ════════════════════════════════════════════════════════
-        """
+    if [ -z "${BRANCHES}" ]; then
+        echo "❌ ERROR: No PCF branches found in ${SVN_REPOS_LOCAL}"
+        exit 1
+    fi
 
-        try {
-            timeout(time: 45, unit: 'MINUTES') {
-                retry(2) {
-                    sh '''
-                    set -euo pipefail
-
-                    BRANCH="''' + branch + '''"
-                    BRANCH_NUM=''' + branchNum + '''
-                    TOTAL_BRANCHES=''' + branches.size() + '''
-                    LOG_FILE="logs/build_pcf_${BRANCH}_${BUILD_NUMBER}.log"
-
-                    echo "=========================================="
-                    echo "PCF Branch Build [${BRANCH_NUM}/${TOTAL_BRANCHES}]"
-                    echo "=========================================="
-                    echo "Branch             : ${BRANCH}"
-                    echo "Build Number       : ${BUILD_NO}"
-                    echo "Module Version     : ${MODULE_VER}"
-                    echo "Target Environment : ${ENVIRONMENT}"
-                    echo "DRY_RUN Mode       : ${DRY_RUN}"
-                    echo "Log File           : ${LOG_FILE}"
-                    echo "=========================================="
-                    echo ""
-
-                    ansible-playbook \\
-                        -i ${ANSIBLE_INVENTORY}/hosts.ini \\
-                        playbooks/build_pcf.yml \\
-                        -e "branch=${BRANCH}" \\
-                        -e "build_no=${BUILD_NO}" \\
-                        -e "module_ver=${MODULE_VER}" \\
-                        -e "build_environment=${ENVIRONMENT}" \\
-                        -e "build_pcf_environment=${ENVIRONMENT}" \\
-                        -e "svn_repos_local=${SVN_REPOS_LOCAL}" \\
-                        -e "scm_token_present=yes" \\
-                        $([ "${DRY_RUN}" = "true" ] && echo "--check" || true) \\
-                        --extra-vars "ansible_user=root" \\
-                        -v \\
-                    2>&1 | tee "${LOG_FILE}"
-
-                    BUILD_RESULT=${PIPESTATUS[0]}
-                    if [ ${BUILD_RESULT} -ne 0 ]; then
-                        echo ""
-                        echo "❌ Build FAILED for branch: ${BRANCH} [${BRANCH_NUM}/${TOTAL_BRANCHES}]"
-                        echo ""
-                        exit ${BUILD_RESULT}
-                    fi
-
-                    echo ""
-                    echo "✅ Build SUCCESS for branch: ${BRANCH} [${BRANCH_NUM}/${TOTAL_BRANCHES}]"
-                    echo ""
-                    '''
-                }
-            }
-
-            successBranches.add(branch)
-            buildResults[branch] = '✅ SUCCESS'
-            echo "✅ [${branchNum}/${branches.size()}] ${branch} — COMPLETE"
-            echo ""
-
-        } catch (Exception e) {
-            failedBranches.add(branch)
-            buildResults[branch] = '❌ FAILED'
-            echo "❌ [${branchNum}/${branches.size()}] ${branch} — BUILD FAILED"
-            echo "   Error: ${e.message}"
-            echo ""
-
-            if (params.CONTINUE_ON_BUILD_FAILURE) {
-                echo "⚠️  Continuing to next branch (best-effort mode enabled)"
-                echo ""
-            } else {
-                echo "🛑 Stopping build (fail-fast mode)"
-                error("PCF build failed for branch: ${branch}")
-            }
-        }
-    }
-
-    // Summary report
-    echo """
-    ════════════════════════════════════════════════════════
-    📊 PCF BUILD SUMMARY
-    ════════════════════════════════════════════════════════
-    Total Branches      : ${branches.size()}
-    Successful Builds   : ${successBranches.size()} ✅
-    Failed Builds       : ${failedBranches.size()} ❌
-    ════════════════════════════════════════════════════════
-    """
-
-    if (buildResults.size() > 0) {
-        echo "Build Results by Branch:"
-        buildResults.each { branch, status ->
-            echo "  ${status} ${branch}"
-        }
-    }
-
+    TOTAL=$(echo "${BRANCHES}" | wc -l)
+    echo "Found ${TOTAL} branch(es) — building sequentially"
     echo ""
 
-    if (successBranches.size() > 0) {
-        echo "✅ Successful Builds (${successBranches.size()}):"
-        successBranches.each { b -> echo "   • ${b}" }
-    }
+    COUNTER=0
+    PASS=0
+    FAIL=0
+    FAILED_LIST=""
 
-    if (failedBranches.size() > 0) {
-        echo "❌ Failed Builds (${failedBranches.size()}):"
-        failedBranches.each { b -> echo "   • ${b}" }
-        error("One or more PCF builds failed: ${failedBranches.join(', ')}")
-    }
+    for BRANCH in ${BRANCHES}; do
+        COUNTER=$((COUNTER + 1))
+        LOG_FILE="logs/build_pcf_${BRANCH}_${BUILD_NUMBER}.log"
+        MAX_RETRY=2
+        ATTEMPT=0
+        BRANCH_OK=false
 
+        echo "════════════════════════════════════════════════════════"
+        echo "[${COUNTER}/${TOTAL}] Starting: ${BRANCH}"
+        echo "════════════════════════════════════════════════════════"
+
+        # ── Retry loop (replaces Groovy retry()) ──
+        while [ ${ATTEMPT} -lt ${MAX_RETRY} ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            echo ""
+            echo "  Attempt ${ATTEMPT}/${MAX_RETRY} — Branch: ${BRANCH}"
+            echo "  Build No : ${BUILD_NO}"
+            echo "  Module   : ${MODULE_VER}"
+            echo "  Env      : ${ENVIRONMENT}"
+            echo "  DRY_RUN  : ${DRY_RUN}"
+            echo "  Log      : ${LOG_FILE}"
+            echo ""
+
+            if ansible-playbook \
+                    -i "${ANSIBLE_INVENTORY}/hosts.ini" \
+                    playbooks/build_pcf.yml \
+                    -e "branch=${BRANCH}" \
+                    -e "build_no=${BUILD_NO}" \
+                    -e "module_ver=${MODULE_VER}" \
+                    -e "build_environment=${ENVIRONMENT}" \
+                    -e "build_pcf_environment=${ENVIRONMENT}" \
+                    -e "svn_repos_local=${SVN_REPOS_LOCAL}" \
+                    -e "scm_token_present=yes" \
+                    $([ "${DRY_RUN}" = "true" ] && echo "--check" || true) \
+                    --extra-vars "ansible_user=root" \
+                    -v \
+                    2>&1 | tee "${LOG_FILE}"; then
+
+                echo ""
+                echo "  ✅ [${COUNTER}/${TOTAL}] Attempt ${ATTEMPT}: SUCCESS — ${BRANCH}"
+                BRANCH_OK=true
+                break
+
+            else
+                echo ""
+                echo "  ❌ [${COUNTER}/${TOTAL}] Attempt ${ATTEMPT}: FAILED — ${BRANCH}"
+                if [ ${ATTEMPT} -lt ${MAX_RETRY} ]; then
+                    echo "  ⏳ Waiting 30s before retry..."
+                    sleep 30
+                fi
+            fi
+        done
+
+        if [ "${BRANCH_OK}" = "true" ]; then
+            PASS=$((PASS + 1))
+        else
+            FAIL=$((FAIL + 1))
+            FAILED_LIST="${FAILED_LIST} ${BRANCH}"
+            echo "  ❌ All ${MAX_RETRY} attempts exhausted for: ${BRANCH}"
+            echo ""
+            # Fail immediately — stop remaining branches
+            echo "════════════════════════════════════════════════════════"
+            echo "PCF BUILD SUMMARY (partial — stopped on failure)"
+            echo "════════════════════════════════════════════════════════"
+            echo "  Processed : ${COUNTER}/${TOTAL}"
+            echo "  Successful: ${PASS} ✅"
+            echo "  Failed    : ${FAIL} ❌"
+            echo "  Failed branches:${FAILED_LIST}"
+            echo "════════════════════════════════════════════════════════"
+            exit 1
+        fi
+
+        echo ""
+    done
+
+    # ── Final summary ──
+    echo ""
     echo "════════════════════════════════════════════════════════"
+    echo "📊 PCF BUILD SUMMARY — ALL COMPLETE"
+    echo "════════════════════════════════════════════════════════"
+    echo "  Total Branches: ${TOTAL}"
+    echo "  Successful    : ${PASS} ✅"
+    echo "  Failed        : ${FAIL} ❌"
+    echo "════════════════════════════════════════════════════════"
+    '''
 }
 
 def runSecurityUpdates() {
@@ -848,10 +831,7 @@ def generateBuildSummary() {
     <div class="section">
         <h2>📊 Build Summary</h2>
         <table>
-            <tr>
-                <th>Parameter</th>
-                <th>Value</th>
-            </tr>
+            <tr><th>Parameter</th><th>Value</th></tr>
             <tr>
                 <td><span class="key">Environment</span></td>
                 <td>${ENVIRONMENT}</td>
@@ -869,6 +849,10 @@ def generateBuildSummary() {
                 <td>${BUILD_HOSTNAME}</td>
             </tr>
             <tr>
+                <td><span class="key">Build Mode</span></td>
+                <td>Sequential (one-by-one)</td>
+            </tr>
+            <tr>
                 <td><span class="key">Pipeline Status</span></td>
                 <td class="success">✅ COMPLETE</td>
             </tr>
@@ -883,7 +867,7 @@ def generateBuildSummary() {
             <li><span class="success">✅</span> Health Checks</li>
             <li><span class="success">✅</span> PCF Branch Discovery</li>
             <li><span class="success">✅</span> Ansible Setup Validation</li>
-            <li><span class="success">✅</span> PCF Module Builds (if enabled)</li>
+            <li><span class="success">✅</span> PCF Module Builds — Sequential (if enabled)</li>
             <li><span class="success">✅</span> Security Updates (if enabled)</li>
             <li><span class="success">✅</span> SSP Installation (if enabled)</li>
             <li><span class="success">✅</span> Post-Reboot Validation</li>

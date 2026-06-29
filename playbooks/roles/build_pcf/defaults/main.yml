@@ -1,209 +1,47 @@
 ---
-# =============================================================
-# Build PCF Role -- Default Variables
-# These are DEFAULT values for the build_pcf role.
-# All hardcoded paths -- NO Jinja2 references within this file.
-# Override with group_vars or -e at invocation time.
-# =============================================================
+# =============================================================================
+# Build PCF Role - Default Variables
+# =============================================================================
+# These are DEFAULTS - override with group_vars, host_vars, or -e at CLI
+# =============================================================================
 
-# ---------------------------------------------------------
-# Build Environment Paths (Customizable per environment)
-# ---------------------------------------------------------
-
-# Chroot sandbox for isolated build environment
+# Build Environments & Paths
 sandbox_path: "/sandbox/rhel810"
-
-# Build agent home directory (Bamboo CI agent)
 build_agent_home: "/home/bambooagent"
+svn_base_url: "https://scm.forge.avaya.com/svnroot/aurora/branches"
 
-# Bamboo build working directory
-build_base_dir: "/home/bambooagent/agent1/xml-data/build-dir/nn"
-
-# SVN repository base path (synced from buildserver)
-svn_base: "/home/bambooagent/SVN_repos"
-
-# Local release/artifacts directory (destination for RPMs)
-release_base: "/root/releases"
-
-# Temporary kernel build workspace
-kernel_work_dir: "/tmp/kernel_build"
-
-# ---------------------------------------------------------
-# Build Scripts and Executables
-# ---------------------------------------------------------
-
-# PCF build script relative path within SVN checkout
-build_pcf_script: "/home/bambooagent/agent1/xml-data/build-dir/nn/10.2.1.0_orion_int/icu/buildtools/bambooBuildRpms"
-
-# Chroot binary path
-chroot_bin: "/usr/sbin/chroot"
-
-# Build environment - set from Jenkins build_environment parameter
-build_pcf_environment: "{{ build_pcf_environment | default(build_environment | default('production')) }}"
-
-# ---------------------------------------------------------
-# Source Code Configuration
-# ---------------------------------------------------------
-
-# SCM (Source Control Management) base URL for branch patterns
-scm_base_url: "https://scm.forge.avaya.com/svnroot/aurora/branches"
-
-# Build system user (runs build scripts)
-build_user: "bambooagent"
-
-# ---------------------------------------------------------
-# Logging Configuration
-# ---------------------------------------------------------
-
-# Log output directory
+# Log Configuration
 log_dir: "/var/log/avaya_pipeline"
-
-# Log file path template (will be formatted at runtime)
-# Uses: branch, ansible_date_time.date
-log_file_template: "/var/log/avaya_pipeline/build_pcf_{branch}_{date}.log"
-
-# Log rotation (days to keep)
 log_retention_days: 90
 
-# ---------------------------------------------------------
-# Build Timeout Limits (seconds)
-# ---------------------------------------------------------
+# Build Timeouts (seconds)
+build_timeout: 10800           # 3 hours
+kernel_timeout: 300             # 5 minutes
+rpm_query_timeout: 60           # 1 minute
 
-# Maximum time for full PCF build (3 hours)
-build_timeout: 10800
-
-# Maximum time for kernel-devel download (5 minutes)
-kernel_download_timeout: 300
-
-# Maximum time for kernel installation (5 minutes)
-kernel_install_timeout: 300
-
-# Maximum time for RPM query operations (1 minute)
-rpm_query_timeout: 60
-
-# Maximum time for chroot build script (3 hours)
-chroot_build_timeout: 10800
-
-# ---------------------------------------------------------
 # Retry Configuration
-# ---------------------------------------------------------
-
-# Default retry count for operations
 default_retries: 3
-
-# Retry count for kernel RPM download
-kernel_download_retries: 5
-
-# Delay between retries (seconds)
 retry_delay: 30
 
-# ---------------------------------------------------------
-# File Size and Validation Thresholds
-# ---------------------------------------------------------
+# Disk Space Requirements
+min_disk_free_gb: 20
 
-# Minimum kernel RPM file size (1 MB)
-kernel_min_size_bytes: 1048576
+# RPM Size Thresholds
+kernel_rpm_min_size_bytes: 1048576          # 1 MB
+pcf_rpm_min_size_bytes: 2097152             # 2 MB
+pcf_rpm_max_size_bytes: 104857600           # 100 MB
 
-# Minimum expected PCF RPM size (2 MB)
-pcf_rpm_min_size_bytes: 2097152
-
-# Expected PCF RPM max size (100 MB)
-pcf_rpm_max_size_bytes: 104857600
-
-# Minimum free disk space for build (5 GB)
-min_disk_free_gb: 5
-
-# ---------------------------------------------------------
-# Build Output and Artifacts
-# ---------------------------------------------------------
-
-# Expected RPM name pattern
-rpm_name_pattern: "pcf-module-.*\\.rpm$"
-
-# Depth to search for generated RPMs
-rpm_search_depth: 5
-
-# Suffix for archived build logs
-build_log_archive_suffix: ".bak"
-
-# ---------------------------------------------------------
-# Release Server Configuration
-# ---------------------------------------------------------
-
-# HTTP endpoint for release artifacts (verification)
+# Release Server
 release_http_base: "http://10.133.43.170/releases"
-
-# HTTP timeout for release server checks (seconds)
 release_http_timeout: 30
 
-# ---------------------------------------------------------
-# Paths Inside Chroot Sandbox
-# ---------------------------------------------------------
-
-# Standard path to kernel sources inside sandbox
-sandbox_kernel_prefix: "/usr/src/kernels"
-
-# Temporary path inside sandbox for staging kernel RPM
-sandbox_tmp_path: "/tmp"
-
-# ---------------------------------------------------------
-# Validation and Format Settings
-# ---------------------------------------------------------
-
-# Timestamp format for logs
-timestamp_format: "%Y-%m-%dT%H:%M:%SZ"
-
-# Log section separator
-log_separator: "============================================================"
-
-# ---------------------------------------------------------
-# Cleanup Behavior
-# ---------------------------------------------------------
-
-# Remove build directory after successful build
-cleanup_build_dir_on_success: false
-
-# Remove kernel work dir after successful kernel setup
-cleanup_kernel_work_on_success: false
-
-# Remove old PCF RPMs from agent home before build
-remove_stale_rpms: true
-
-# ---------------------------------------------------------
-# Feature Flags
-# ---------------------------------------------------------
-
-# Enable GPG signature checking on kernel RPM
-validate_kernel_rpm_signature: false
-
-# Enable MD5 checksum verification of RPM
+# Features
+validate_kernel_signature: false
 verify_rpm_checksum: true
+generate_checksum_manifest: true
+cleanup_old_artifacts: true
 
-# Enable RPM database integrity check after build
-check_rpm_database: true
-
-# ---------------------------------------------------------
-# Notification Settings
-# ---------------------------------------------------------
-
-# Send notification on build completion
-notify_on_success: true
-
-# Send notification on build failure
-notify_on_failure: true
-
-# Email recipients (comma-separated, optional)
-notification_recipients: ""
-
-# ---------------------------------------------------------
-# Debug and Diagnostic Settings
-# ---------------------------------------------------------
-
-# Enable detailed logging of all operations
-debug_mode: false
-
-# Keep build artifacts even on failure (for diagnosis)
-keep_artifacts_on_failure: true
-
-# Log full stdout/stderr of all shell commands
-verbose_shell_output: false
+# CI/CD Metadata
+ci_system: "Jenkins"
+pipeline_name: "avaya-sbce-ssp-pcf"
+build_initiator: "{{ lookup('env', 'BUILD_USER') | default('automated') }}"

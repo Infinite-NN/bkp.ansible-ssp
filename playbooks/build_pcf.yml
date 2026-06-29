@@ -1,171 +1,229 @@
 ---
-# =============================================================
+# =============================================================================
 # Build PCF Module Playbook
-# Purpose: Compile PCF modules from source, generate RPMs
-# Hosts  : buildserver (buildserver group in inventory)
-# =============================================================
+# =============================================================================
+# Purpose: Orchestrate PCF module compilation and RPM generation
+# Hosts:   buildserver group
+# Params:  branch, build_no, module_ver, environment (via -e or Jenkins)
+# =============================================================================
 
-- name: Build PCF Module
+- name: "Build PCF Module Pipeline"
   hosts: buildserver
   become: yes
   gather_facts: yes
-
+  
   vars:
-    # PCF Build Configuration (can be overridden via -e flag)
-    pcf_branch: "{{ branch | default('10.2.1.0_orion_int') }}"
-    pcf_build_no: "{{ build_no | default('24800') }}"
-    pcf_module_ver: "{{ module_ver | default('4.3.4.193953') }}"
-    pcf_environment: "{{ environment | default('production') }}"
+    # =========================================================================
+    # BUILD PARAMETERS (Override via -e "branch=X build_no=Y module_ver=Z")
+    # =========================================================================
+    build_pcf_branch: "{{ branch | default('UNDEFINED') }}"
+    build_pcf_build_no: "{{ build_no | default('UNDEFINED') }}"
+    build_pcf_module_ver: "{{ module_ver | default('UNDEFINED') }}"
+    build_pcf_environment: "{{ environment | default('production') }}"
     
-    # Build paths
-    pcf_src_root: "/opt/pcf"
-    pcf_build_root: "/tmp/pcf_builds"
-    pcf_releases_dir: "/root/releases"
-    
-    # Build logs
-    pcf_build_log: "/var/log/pcf_build_{{ pcf_build_no }}_{{ ansible_date_time.iso8601_basic_short }}.log"
+    # =========================================================================
+    # DERIVED PATHS (computed at runtime)
+    # =========================================================================
+    build_pcf_build_root: "/tmp/pcf_builds/{{ build_pcf_branch }}"
+    build_pcf_releases_dir: "/root/releases"
+    build_pcf_log: "/var/log/avaya_pipeline/build_pcf_{{ build_pcf_build_no }}_{{ ansible_date_time.date }}.log"
 
   pre_tasks:
-    - name: "? Validate PCF build parameters"
+    # =========================================================================
+    # STAGE 0: PARAMETER VALIDATION
+    # =========================================================================
+    - name: "⚡ STAGE 0: Parameter Validation"
       block:
-        - name: "Validate branch parameter"
+        - name: "Validate required parameters are set"
           assert:
             that:
-              - pcf_branch is defined
-              - pcf_branch | length > 0
-              - pcf_branch is regex('^10\.2\.1\.[0-9]+_orion_int$')
-            fail_msg: "? Invalid PCF branch: {{ pcf_branch }}"
-            success_msg: "? Branch validation passed: {{ pcf_branch }}"
-          tags:
-            - validate
-            - always
+              - build_pcf_branch != 'UNDEFINED'
+              - build_pcf_build_no != 'UNDEFINED'
+              - build_pcf_module_ver != 'UNDEFINED'
+            fail_msg: |
+              ❌ MISSING REQUIRED PARAMETERS
+              
+              Usage: ansible-playbook build_pcf.yml -e "branch=X build_no=Y module_ver=Z"
+              
+              Example:
+                -e "branch=10.2.1.0_orion_int build_no=24800 module_ver=4.3.4.193953"
+                
+              Current values:
+                branch:     {{ build_pcf_branch }}
+                build_no:   {{ build_pcf_build_no }}
+                module_ver: {{ build_pcf_module_ver }}
+            success_msg: "✅ All required parameters provided"
+          tags: [validate, always]
 
-        - name: "Validate build number"
+        - name: "Validate branch format (10.2.1.X_orion_int)"
           assert:
             that:
-              - pcf_build_no is defined
-              - pcf_build_no | string | regex_search('^[0-9]+$')
-            fail_msg: "? Build number must be numeric: {{ pcf_build_no }}"
-            success_msg: "? Build number validation passed: {{ pcf_build_no }}"
-          tags:
-            - validate
-            - always
+              - build_pcf_branch is regex('^10\.2\.1\.[0-9]+_orion_int$')
+            fail_msg: |
+              ❌ Invalid branch format: {{ build_pcf_branch }}
+              Expected: 10.2.1.X_orion_int (e.g., 10.2.1.0_orion_int)
+            success_msg: "✅ Branch format valid: {{ build_pcf_branch }}"
+          tags: [validate, always]
 
-        - name: "Validate module version format"
+        - name: "Validate build_no is numeric"
           assert:
             that:
-              - pcf_module_ver is defined
-              - pcf_module_ver | regex_search('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
-            fail_msg: "? Invalid module version format: {{ pcf_module_ver }} (expected x.x.x.xxxxxx)"
-            success_msg: "? Module version validation passed: {{ pcf_module_ver }}"
+              - build_pcf_build_no is regex('^[0-9]+$')
+            fail_msg: "❌ build_no must be numeric, got: {{ build_pcf_build_no }}"
+            success_msg: "✅ Build number valid: {{ build_pcf_build_no }}"
+          tags: [validate, always]
+
+        - name: "Validate module_ver format (X.X.X.XXXXXX)"
+          assert:
+            that:
+              - build_pcf_module_ver is regex('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+            fail_msg: |
+              ❌ Invalid module version: {{ build_pcf_module_ver }}
+              Expected format: X.X.X.X (e.g., 4.3.4.193953)
+            success_msg: "✅ Module version format valid: {{ build_pcf_module_ver }}"
+          tags: [validate, always]
 
         - name: "Display build configuration"
           debug:
             msg: |
-              ?????????????????????????????????????
-              ?    PCF BUILD CONFIGURATION        ?
-              ?????????????????????????????????????
-              ? Branch      : {{ pcf_branch }}
-              ? Build No    : {{ pcf_build_no }}
-              ? Module Ver  : {{ pcf_module_ver }}
-              ? Environment : {{ pcf_environment }}
-              ? Target Host : {{ inventory_hostname }}
-              ? Build Root  : {{ pcf_build_root }}
-              ?????????????????????????????????????
+              ════════════════════════════════════════════════════════
+              🔨 PCF BUILD CONFIGURATION
+              ════════════════════════════════════════════════════════
+              Branch           : {{ build_pcf_branch }}
+              Build Number     : {{ build_pcf_build_no }}
+              Module Version   : {{ build_pcf_module_ver }}
+              Environment      : {{ build_pcf_environment }}
+              Build Host       : {{ inventory_hostname }}
+              Build Date       : {{ ansible_date_time.iso8601 }}
+              ════════════════════════════════════════════════════════
+          tags: [always]
 
-    - name: "? Prepare build workspace"
+      rescue:
+        - name: "❌ Fail on validation errors"
+          fail:
+            msg: "Parameter validation failed. See details above."
+      tags: [validate, always]
+
+    # =========================================================================
+    # STAGE 0B: WORKSPACE PREPARATION
+    # =========================================================================
+    - name: "⚡ STAGE 0B: Prepare Build Workspace"
       block:
-        - name: "Create build directories"
+        - name: "Create required directories"
           file:
             path: "{{ item }}"
             state: directory
-            mode: '0755'
+            mode: "0755"
             owner: root
             group: root
           loop:
-            - "{{ pcf_build_root }}"
-            - "{{ pcf_releases_dir }}"
-            - "/var/log/pcf_builds"
+            - "{{ build_pcf_build_root | dirname }}"
+            - "{{ build_pcf_releases_dir }}"
+            - "/var/log/avaya_pipeline"
+          tags: [prepare, always]
 
-        - name: "Clean previous build artifacts (safe)"
+        - name: "Verify disk space (minimum 20GB)"
           shell: |
-            find {{ pcf_build_root }} -type f -mtime +7 -delete || true
-            echo "? Old build artifacts cleaned"
-          changed_when: true
-          register: cleanup_result
-          failed_when: false
+            df -BG {{ build_pcf_build_root | dirname }} | awk 'NR==2 {gsub("G", ""); print $4}'
+          register: disk_free
+          changed_when: false
+          failed_when: (disk_free.stdout | int) < 20
+          tags: [prepare, always]
 
-        - name: "Display build workspace status"
+        - name: "✅ Disk space validated: {{ disk_free.stdout }}GB available"
           debug:
-            msg: "{{ cleanup_result.stdout }}"
+            msg: "✅ Sufficient disk space confirmed"
+          tags: [prepare, always]
 
+      rescue:
+        - name: "❌ Workspace preparation failed"
+          fail:
+            msg: |
+              ❌ WORKSPACE PREPARATION FAILED
+              - Insufficient disk space (need 20GB, have {{ disk_free.stdout }}GB)
+              - Check permissions on {{ build_pcf_build_root | dirname }}
+
+      tags: [prepare, always]
+
+  # ===========================================================================
+  # EXECUTE BUILD ROLE
+  # ===========================================================================
   roles:
     - role: build_pcf
       vars:
-        # Pass all build variables to the role
-        build_pcf_branch: "{{ pcf_branch }}"
-        build_pcf_build_no: "{{ pcf_build_no }}"
-        build_pcf_module_ver: "{{ pcf_module_ver }}"
-        build_pcf_environment: "{{ pcf_environment }}"
-        build_pcf_src_root: "{{ pcf_src_root }}"
-        build_pcf_build_root: "{{ pcf_build_root }}"
-        build_pcf_releases_dir: "{{ pcf_releases_dir }}"
-        build_pcf_log: "{{ pcf_build_log }}"
+        build_pcf_branch: "{{ build_pcf_branch }}"
+        build_pcf_build_no: "{{ build_pcf_build_no }}"
+        build_pcf_module_ver: "{{ build_pcf_module_ver }}"
+        build_pcf_environment: "{{ build_pcf_environment }}"
+        build_pcf_build_root: "{{ build_pcf_build_root }}"
+        build_pcf_releases_dir: "{{ build_pcf_releases_dir }}"
+        build_pcf_log: "{{ build_pcf_log }}"
+      tags: [build_pcf]
 
+  # ===========================================================================
+  # POST-BUILD VERIFICATION
+  # ===========================================================================
   post_tasks:
-    - name: "? PCF Build Post-Tasks"
+    - name: "✅ STAGE 4: Post-Build Verification"
       block:
-        - name: "Verify build output"
-          stat:
-            path: "{{ pcf_releases_dir }}"
-          register: releases_stat
-
-        - name: "List generated RPMs"
+        - name: "Discover generated RPMs"
           find:
-            paths: "{{ pcf_releases_dir }}"
+            paths: "{{ build_pcf_releases_dir }}"
             patterns: "*.rpm"
             file_type: file
           register: generated_rpms
+          tags: [postbuild, always]
 
-        - name: "Display build artifacts"
+        - name: "Fail if no RPMs generated"
+          assert:
+            that:
+              - generated_rpms.matched > 0
+            fail_msg: |
+              ❌ NO RPM GENERATED!
+              
+              Build directory: {{ build_pcf_build_root }}
+              Release dir:     {{ build_pcf_releases_dir }}
+              Log file:        {{ build_pcf_log }}
+              
+              Check log file for details.
+            success_msg: "✅ {{ generated_rpms.matched }} RPM(s) generated"
+          tags: [postbuild, always]
+
+        - name: "Display build results"
           debug:
             msg: |
-              ? PCF BUILD COMPLETE
-              Generated {{ generated_rpms.matched }} RPM(s):
-              {{ generated_rpms.files | map(attribute='path') | list | join('\n') }}
-
-        - name: "Generate build manifest"
-          copy:
-            content: |
-              #!/bin/bash
-              # PCF Build Manifest
-              # Generated: {{ ansible_date_time.iso8601 }}
+              ════════════════════════════════════════════════════════
+              ✅ PCF BUILD COMPLETED SUCCESSFULLY
+              ════════════════════════════════════════════════════════
+              Build Number     : {{ build_pcf_build_no }}
+              Branch           : {{ build_pcf_branch }}
+              Module Version   : {{ build_pcf_module_ver }}
               
-              BUILD_NUMBER="{{ pcf_build_no }}"
-              BRANCH="{{ pcf_branch }}"
-              MODULE_VERSION="{{ pcf_module_ver }}"
-              ENVIRONMENT="{{ pcf_environment }}"
-              BUILD_HOST="{{ inventory_hostname }}"
-              BUILD_TIMESTAMP="{{ ansible_date_time.iso8601 }}"
-              
-              RPMS_GENERATED={{ generated_rpms.matched }}
-              {% for rpm in generated_rpms.files %}
-              RPM_FILE="{{ rpm.path }}"
+              Generated Artifacts:
+              {% for rpm in generated_rpms.files | sort(attribute='path') %}
+              - {{ rpm.path | basename }}
               {% endfor %}
-            dest: "{{ pcf_releases_dir }}/build_manifest_{{ pcf_build_no }}.env"
-            mode: '0644'
+              
+              Release Directory: {{ build_pcf_releases_dir }}
+              Build Log        : {{ build_pcf_log }}
+              ════════════════════════════════════════════════════════
+          tags: [postbuild, always]
 
       rescue:
-        - name: "?  Build verification warning"
+        - name: "❌ Post-build verification failed"
           debug:
-            msg: "?  Post-build verification encountered issues (non-blocking)"
-
-  handlers:
-    - name: "restart pcf service"
-      systemd:
-        name: pcf
-        state: restarted
-      listen: "restart pcf"
+            msg: |
+              ❌ BUILD VERIFICATION FAILED
+              
+              See log for details: {{ build_pcf_log }}
+              
+              Troubleshooting:
+              1. Check build host disk space
+              2. Review build log for compilation errors
+              3. Verify chroot environment is available
+              4. Check BuildServer connectivity
+      tags: [postbuild, always]
 
   tags:
+    - build_pcf
     - always

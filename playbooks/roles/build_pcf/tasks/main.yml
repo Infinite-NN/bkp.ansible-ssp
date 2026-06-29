@@ -1,90 +1,72 @@
 ---
-# =============================================================
-# Build PCF Role -- Main Entry Point (Production-Ready)
-# =============================================================
+# =============================================================================
+# Build PCF Role - Main Task Orchestrator
+# =============================================================================
 
-- name: "[BUILD_PCF] Role initialization"
+- name: "🔧 BUILD_PCF: Role initialization"
   debug:
     msg: |
-      ??????????????????????????????????????
-      ?   BUILD_PCF ROLE INITIALIZATION    ?
-      ??????????????????????????????????????
-      ? Branch      : {{ build_pcf_branch | default('unknown') }}
-      ? Build No    : {{ build_pcf_build_no | default('unknown') }}
-      ? Module Ver  : {{ build_pcf_module_ver | default('unknown') }}
-      ? Environment : {{ build_pcf_environment | default('unknown') }}
-      ? Build Root  : {{ build_pcf_build_root | default('unknown') }}
-      ??????????????????????????????????????
-  tags:
-    - always
+      ════════════════════════════════════════════════════════
+      🔨 BUILD_PCF ROLE STARTING
+      ════════════════════════════════════════════════════════
+      Branch      : {{ build_pcf_branch }}
+      Build No    : {{ build_pcf_build_no }}
+      Module Ver  : {{ build_pcf_module_ver }}
+      Environment : {{ build_pcf_environment }}
+      Build Root  : {{ build_pcf_build_root }}
+      ════════════════════════════════════════════════════════
+  tags: [always]
 
-# =============================================================
-# LOGGING INITIALIZATION
-# =============================================================
+# =============================================================================
+# LOGGING SETUP
+# =============================================================================
 
-- name: "[BUILD_PCF] Ensure log directory exists"
-  file:
-    path: "{{ build_pcf_log | dirname }}"
-    state: "directory"
-    mode: "0755"
-    owner: "root"
-    group: "root"
-  become: yes
-  register: log_dir_result
-  failed_when:
-    - log_dir_result is failed
-    - log_dir_result.rc is defined
-  tags:
-    - always
-
-- name: "[BUILD_PCF] Initialize build log with header"
-  copy:
-    content: |
-      ============================================================
-      PCF BUILD LOG
-      ============================================================
-      Timestamp   : {{ ansible_date_time.iso8601 }}
-      Host        : {{ inventory_hostname }}
-      
-      Build Configuration:
-        Branch      : {{ build_pcf_branch }}
-        Build No    : {{ build_pcf_build_no }}
-        Module Ver  : {{ build_pcf_module_ver }}
-        Environment : {{ build_pcf_environment }}
-        Build Root  : {{ build_pcf_build_root }}
-        
-      ============================================================
-      Build Tasks:
-      ============================================================
-    dest: "{{ build_pcf_log }}"
-    mode: "0644"
-    owner: "root"
-    group: "root"
-    force: yes
-  become: yes
-  register: log_init_result
-  failed_when:
-    - log_init_result is failed
-  tags:
-    - always
-
-- name: "[BUILD_PCF] Verify log file is writable"
-  shell: |
-    test -w "{{ build_pcf_log }}" && echo "OK" || exit 1
-  changed_when: false
-  register: log_writable_check
-  failed_when: log_writable_check.rc != 0
-  tags:
-    - always
-
-# =============================================================
-# PRE-FLIGHT VALIDATION BLOCK
-# =============================================================
-
-- name: "[BUILD_PCF] Pre-flight checks"
+- name: "📝 Initialize build log"
   block:
-    # Validate all required variables are set
-    - name: "Step 1/5: Verify required variables"
+    - name: "Create log directory"
+      file:
+        path: "{{ build_pcf_log | dirname }}"
+        state: directory
+        mode: "0755"
+        owner: root
+        group: root
+
+    - name: "Initialize log file with header"
+      copy:
+        content: |
+          ════════════════════════════════════════════════════════
+          PCF BUILD LOG
+          ════════════════════════════════════════════════════════
+          Timestamp   : {{ ansible_date_time.iso8601 }}
+          Host        : {{ inventory_hostname }}
+          
+          BUILD PARAMETERS:
+            Branch        : {{ build_pcf_branch }}
+            Build Number  : {{ build_pcf_build_no }}
+            Module Ver    : {{ build_pcf_module_ver }}
+            Environment   : {{ build_pcf_environment }}
+            Build Root    : {{ build_pcf_build_root }}
+          
+          ════════════════════════════════════════════════════════
+          TASK EXECUTION LOG:
+          ════════════════════════════════════════════════════════
+        dest: "{{ build_pcf_log }}"
+        mode: "0644"
+        force: yes
+
+  rescue:
+    - name: "❌ Failed to initialize log"
+      fail:
+        msg: "Cannot create log file at {{ build_pcf_log }}"
+  tags: [always]
+
+# =============================================================================
+# STAGE 1: PRE-FLIGHT VALIDATION
+# =============================================================================
+
+- name: "⚡ STAGE 1: Pre-Flight Validation"
+  block:
+    - name: "Verify variables are defined"
       assert:
         that:
           - build_pcf_branch is defined and build_pcf_branch | length > 0
@@ -93,397 +75,116 @@
           - build_pcf_environment is defined and build_pcf_environment | length > 0
           - build_pcf_build_root is defined and build_pcf_build_root | length > 0
         fail_msg: |
-          ? MISSING REQUIRED BUILD VARIABLES:
-            build_pcf_branch: {{ build_pcf_branch | default('UNDEFINED') }}
-            build_pcf_build_no: {{ build_pcf_build_no | default('UNDEFINED') }}
-            build_pcf_module_ver: {{ build_pcf_module_ver | default('UNDEFINED') }}
-            build_pcf_environment: {{ build_pcf_environment | default('UNDEFINED') }}
-            build_pcf_build_root: {{ build_pcf_build_root | default('UNDEFINED') }}
-        success_msg: "? All required variables present and valid"
-      tags:
-        - build_pcf
-        - pre_flight
+          ❌ Missing required variables
+        success_msg: "✅ All variables present"
+      tags: [preflight]
 
-    # Validate OS is RHEL 8
-    - name: "Step 2/5: Verify RHEL 8 OS"
+    - name: "Verify RHEL 8"
       assert:
         that:
           - ansible_os_family == "RedHat"
-          - ansible_distribution == "RedHat" or ansible_distribution == "CentOS"
           - ansible_distribution_major_version == "8"
         fail_msg: |
-          ? RHEL 8 REQUIRED
-            Found: {{ ansible_distribution }} {{ ansible_distribution_version }}
-            OS Family: {{ ansible_os_family }}
-        success_msg: "? RHEL {{ ansible_distribution_major_version }} validated"
-      tags:
-        - build_pcf
-        - pre_flight
+          ❌ RHEL 8 required (found {{ ansible_distribution }} {{ ansible_distribution_version }})
+        success_msg: "✅ RHEL {{ ansible_distribution_major_version }} detected"
+      tags: [preflight]
 
-    # Check disk space with proper parsing
-    - name: "Step 3/5: Check available disk space"
+    - name: "Check disk space (minimum 20GB)"
       shell: |
-        set -euo pipefail
-    
-        target_dir="{{ build_pcf_build_root | dirname }}"
-    
-        if [ ! -d "$target_dir" ]; then
-            target_dir="/tmp"
-        fi
-    
-        available_kb=$(df -Pk "$target_dir" | awk 'NR==2 {print $4}')
-    
-        if [ -z "$available_kb" ]; then
-            echo "0"
-            exit 1
-        fi
-    
-        available_gb=$(( available_kb / 1024 / 1024 ))
-    
-        echo "${available_gb}"
-      args:
-        executable: /bin/bash
-      register: disk_free_gb
+        df -BG {{ build_pcf_build_root | dirname }} | awk 'NR==2 {gsub("G", ""); print $4}'
+      register: disk_available
       changed_when: false
-      check_mode: no
-      retries: 2
-      delay: 1
-      failed_when:
-        - disk_free_gb.rc != 0
-        - (disk_free_gb.stdout | int) < 20
-      tags:
-        - build_pcf
-        - pre_flight
+      failed_when: (disk_available.stdout | int) < 20
+      tags: [preflight]
 
-    - name: "Validate disk space (minimum 20GB required)"
-      assert:
-        that:
-          - disk_free_gb.stdout is defined
-          - disk_free_gb.stdout | trim | length > 0
-          - (disk_free_gb.stdout | int) >= 20
-        fail_msg: |
-          INSUFFICIENT DISK SPACE
-    
-          Available : {{ disk_free_gb.stdout | default('UNKNOWN') }} GB
-          Required  : 20 GB minimum
-          Build Root: {{ build_pcf_build_root }}
-        success_msg: "Disk space OK: {{ disk_free_gb.stdout }}GB available"
-      tags:
-        - build_pcf
-        - pre_flight
-
-    # Create/validate build directory structure
-    - name: "Step 4/5: Prepare build directory"
+    - name: "Create build directory"
       file:
         path: "{{ build_pcf_build_root }}"
-        state: "directory"
+        state: directory
         mode: "0755"
-        owner: "root"
-        group: "root"
-      become: yes
-      register: build_dir_result
-      tags:
-        - build_pcf
-        - pre_flight
+        owner: root
+        group: root
+      tags: [preflight]
 
-    # Verify build directory is accessible
-    - name: "Step 5/5: Verify build directory accessibility"
-      shell: |
-        test -d "{{ build_pcf_build_root }}" && \
-        test -w "{{ build_pcf_build_root }}" && \
-        echo "? Build directory ready: {{ build_pcf_build_root }}"
-      changed_when: false
-      register: build_dir_check
-      failed_when: build_dir_check.rc != 0
-      tags:
-        - build_pcf
-        - pre_flight
-
-    # Log successful pre-flight completion
-    - name: "[BUILD_PCF] Log pre-flight check SUCCESS"
+    - name: "Log preflight success"
       lineinfile:
         path: "{{ build_pcf_log }}"
         line: |
-          [PRE-FLIGHT] ? All pre-flight checks passed -- {{ ansible_date_time.iso8601 }}
-          [PRE-FLIGHT]    Variables:     ? Valid
-          [PRE-FLIGHT]    OS:            ? RHEL {{ ansible_distribution_major_version }}
-          [PRE-FLIGHT]    Disk Space:    ? {{ disk_free_gb.stdout }}GB available
-          [PRE-FLIGHT]    Build Dir:     ? {{ build_pcf_build_root }}
-        insertafter: "Build Tasks:"
-        state: "present"
-        create: true
-      become: yes
-      register: log_preflight_success
-      failed_when: log_preflight_success is failed
-      tags:
-        - build_pcf
-        - pre_flight
+          [PREFLIGHT] ✅ PASSED - {{ ansible_date_time.iso8601 }}
+            - OS: RHEL {{ ansible_distribution_major_version }}
+            - Disk: {{ disk_available.stdout }}GB available
+            - Build root: {{ build_pcf_build_root }}
+        insertafter: "TASK EXECUTION LOG:"
+      tags: [preflight, always]
 
   rescue:
-    # Capture failure details
-    - name: "?  Capture pre-flight failure details"
-      set_fact:
-        preflight_failure_reason: "{{ ansible_failed_task.name | default('Unknown task failed') }}"
-        preflight_failure_result: "{{ ansible_failed_result | default({}) }}"
-      tags:
-        - build_pcf
-        - pre_flight
-
-    # Log failure to build log
-    - name: "[BUILD_PCF] Log pre-flight check FAILURE"
+    - name: "❌ Preflight failed"
       lineinfile:
         path: "{{ build_pcf_log }}"
-        line: |
-          [PRE-FLIGHT] ? FAILED -- {{ ansible_date_time.iso8601 }}
-          [PRE-FLIGHT]    Failed Task: {{ preflight_failure_reason }}
-          [PRE-FLIGHT]    Disk Space:  {{ disk_free_gb.stdout | default('UNKNOWN') }}GB
-          [PRE-FLIGHT]    Build Root:  {{ build_pcf_build_root }}
-        insertafter: "Build Tasks:"
-        state: "present"
-        create: true
-      become: yes
-      register: log_preflight_failure
-      failed_when: log_preflight_failure is failed
-      tags:
-        - build_pcf
-        - pre_flight
+        line: "[PREFLIGHT] ❌ FAILED - {{ ansible_failed_task.name }}"
+        insertafter: "TASK EXECUTION LOG:"
 
-    # Fail the play with detailed message
-    - name: "? Terminate build due to pre-flight failure"
-      fail:
-        msg: |
-          ??????????????????????????????????????????????????
-          ?  PRE-FLIGHT VALIDATION FAILED                  ?
-          ??????????????????????????????????????????????????
-          ?  Failed Task: {{ preflight_failure_reason }}
-          ?  Build Root:  {{ build_pcf_build_root }}
-          ?  Disk Space:  {{ disk_free_gb.stdout | default('UNKNOWN') }}GB
-          ?  Log File:    {{ build_pcf_log }}
-          ?                                                ?
-          ?  Action: Review log and fix issues before      ?
-          ?          re-running the build                  ?
-          ??????????????????????????????????????????????????
-      tags:
-        - build_pcf
-        - pre_flight
+    - fail:
+        msg: "Pre-flight validation failed. See {{ build_pcf_log }}"
+  tags: [preflight, build_pcf]
 
-  tags:
-    - build_pcf
-    - pre_flight
+# =============================================================================
+# STAGE 2: INCLUDE DEPENDENT TASKS
+# =============================================================================
 
-# =============================================================
-# INCLUDE DEPENDENT TASK FILES
-# =============================================================
-
-- name: "[BUILD_PCF] Include validation tasks"
-  include_tasks: "validate.yml"
+- name: "⚡ STAGE 2: Validation Tasks"
+  include_tasks: validate.yml
   vars:
-    log_file: "{{ build_pcf_log }}"
-    task_context: "validation"
-  tags:
-    - build_pcf
-    - validate
+    task_log_file: "{{ build_pcf_log }}"
+  tags: [validate, build_pcf]
 
-- name: "[BUILD_PCF] Include kernel build tasks"
-  include_tasks: "kernel.yml"
+- name: "⚡ STAGE 2B: Kernel Preparation Tasks"
+  include_tasks: kernel.yml
   vars:
-    log_file: "{{ build_pcf_log }}"
-    task_context: "kernel_build"
-  tags:
-    - build_pcf
-    - kernel
+    task_log_file: "{{ build_pcf_log }}"
+  tags: [kernel, build_pcf]
 
-- name: "[DEBUG] Build execution context"
+# =============================================================================
+# STAGE 3: MAIN BUILD
+# =============================================================================
+
+- name: "⚡ STAGE 3: Main PCF Build"
+  include_tasks: build.yml
+  vars:
+    task_log_file: "{{ build_pcf_log }}"
+  tags: [build, build_pcf]
+
+# =============================================================================
+# STAGE 4: PUBLISH
+# =============================================================================
+
+- name: "⚡ STAGE 4: Publish Build Artifacts"
+  include_tasks: publish.yml
+  vars:
+    task_log_file: "{{ build_pcf_log }}"
+  tags: [publish, build_pcf]
+
+# =============================================================================
+# FINAL: SUMMARY
+# =============================================================================
+
+- name: "✅ BUILD_PCF: Role completed successfully"
   debug:
     msg: |
-      ansible_check_mode={{ ansible_check_mode }}
-      build_pcf_branch={{ build_pcf_branch }}
-      build_pcf_build_no={{ build_pcf_build_no }}
-      build_pcf_environment={{ build_pcf_environment }}
-      build tags active
-      
-- name: "[BUILD_PCF] Include main build tasks"
-  include_tasks: "build.yml"
-  vars:
-    log_file: "{{ build_pcf_log }}"
-    task_context: "main_build"
-  tags:
-    - build_pcf
-    - build
+      ════════════════════════════════════════════════════════
+      ✅ PCF BUILD ROLE COMPLETED
+      ════════════════════════════════════════════════════════
+      Build Number : {{ build_pcf_build_no }}
+      Branch       : {{ build_pcf_branch }}
+      Log File     : {{ build_pcf_log }}
+      ════════════════════════════════════════════════════════
+  tags: [always]
 
-- name: "[BUILD_PCF] Include publish tasks"
-  include_tasks: "publish.yml"
-  vars:
-    log_file: "{{ build_pcf_log }}"
-    task_context: "publish"
-  tags:
-    - build_pcf
-    - publish
-
-# =============================================================
-# POST-BUILD VERIFICATION & MANIFEST GENERATION
-# =============================================================
-
-- name: "[BUILD_PCF] Post-build verification"
-  block:
-    # Verify all expected artifacts exist
-    - name: "Discover build artifacts (RPMs)"
-      find:
-        paths: "{{ build_pcf_releases_dir | default('/root/releases') }}"
-        patterns: "*.rpm"
-        file_type: "file"
-        recurse: no
-      register: built_rpms
-      failed_when:
-        - built_rpms.matched == 0
-      tags:
-        - build_pcf
-        - post_build
-
-    - name: "Validate RPM integrity"
-      shell: |
-        set -euo pipefail
-        for rpm in {{ built_rpms.files | map(attribute='path') | join(' ') }}; do
-          rpm -K "$rpm" > /dev/null 2>&1 || exit 1
-        done
-        echo "? All {{ built_rpms.matched }} RPM(s) validated"
-      changed_when: false
-      register: rpm_validation
-      failed_when: rpm_validation.rc != 0
-      tags:
-        - build_pcf
-        - post_build
-
-    # Generate build manifest with artifact details
-    - name: "Generate build manifest"
-      copy:
-        content: |
-          ============================================================
-          PCF BUILD MANIFEST
-          ============================================================
-          Build Number      : {{ build_pcf_build_no }}
-          Branch            : {{ build_pcf_branch }}
-          Module Version    : {{ build_pcf_module_ver }}
-          Environment       : {{ build_pcf_environment }}
-          Build Host        : {{ inventory_hostname }}
-          Build Completed   : {{ ansible_date_time.iso8601 }}
-          
-          Generated Artifacts:
-          {% for rpm in built_rpms.files | sort(attribute='path') %}
-          - {{ rpm.path }} ({{ (rpm.size / 1024 / 1024) | int }}MB)
-          {% endfor %}
-          
-          Build Statistics:
-          +- Total RPMs:      {{ built_rpms.matched }}
-          +- Total Size:      {{ (built_rpms.files | map(attribute='size') | sum / 1024 / 1024) | int }}MB
-          +- Build Status:    ? SUCCESS
-          +- Log Location:    {{ build_pcf_log }}
-          
-          ============================================================
-        dest: "{{ build_pcf_releases_dir | default('/root/releases') }}/BUILD_MANIFEST_{{ build_pcf_build_no }}.txt"
-        mode: "0644"
-        owner: "root"
-        group: "root"
-      become: yes
-      register: manifest_result
-      tags:
-        - build_pcf
-        - post_build
-
-    # Log build completion
-    - name: "[BUILD_PCF] Log build completion"
-      lineinfile:
-        path: "{{ build_pcf_log }}"
-        line: |
-          [BUILD] ? BUILD COMPLETE -- {{ ansible_date_time.iso8601 }}
-          [BUILD]    Generated: {{ built_rpms.matched }} RPM(s)
-          [BUILD]    Manifest:  {{ manifest_result.dest }}
-        insertafter: "EOF"
-        state: "present"
-        create: true
-      become: yes
-      register: log_completion
-      failed_when: log_completion is failed
-      tags:
-        - build_pcf
-        - post_build
-
-  rescue:
-    # Handle post-build verification failures
-    - name: "?  Capture post-build failure details"
-      set_fact:
-        postbuild_failure_reason: "{{ ansible_failed_task.name | default('Unknown task failed') }}"
-      tags:
-        - build_pcf
-        - post_build
-
-    - name: "[BUILD_PCF] Log post-build verification FAILURE"
-      lineinfile:
-        path: "{{ build_pcf_log }}"
-        line: |
-          [BUILD] ?  Post-build verification encountered issues -- {{ ansible_date_time.iso8601 }}
-          [BUILD]    Failed Task: {{ postbuild_failure_reason }}
-          [BUILD]    RPMs Found:  {{ built_rpms.matched | default(0) }}
-        insertafter: "EOF"
-        state: "present"
-        create: true
-      become: yes
-      ignore_errors: yes
-      tags:
-        - build_pcf
-        - post_build
-
-    # Don't fail the play, just warn
-    - name: "?  Post-build verification warning (non-fatal)"
-      debug:
-        msg: |
-          ?  POST-BUILD VERIFICATION WARNING
-          
-          Task: {{ postbuild_failure_reason }}
-          RPMs Found: {{ built_rpms.matched | default(0) }}
-          
-          Note: Build artifacts may be incomplete. Review:
-            - {{ build_pcf_releases_dir | default('/root/releases') }}
-            - {{ build_pcf_log }}
-      tags:
-        - build_pcf
-        - post_build
-
-  tags:
-    - build_pcf
-    - post_build
-
-# =============================================================
-# FINAL STATUS & SUMMARY
-# =============================================================
-
-- name: "[BUILD_PCF] Display final status"
-  debug:
-    msg: |
-      ??????????????????????????????????????????
-      ?   ? PCF BUILD ROLE COMPLETE           ?
-      ??????????????????????????????????????????
-      ? Build Number : {{ build_pcf_build_no }}
-      ? Branch       : {{ build_pcf_branch }}
-      ? Module Ver   : {{ build_pcf_module_ver }}
-      ? Environment  : {{ build_pcf_environment }}
-      ? RPMs Built   : {{ built_rpms.matched | default('N/A') }}
-      ? Log File     : {{ build_pcf_log }}
-      ? Manifest     : BUILD_MANIFEST_{{ build_pcf_build_no }}.txt
-      ??????????????????????????????????????????
-  tags:
-    - always
-
-- name: "[BUILD_PCF] Store build summary in variables"
+- name: "Store build summary"
   set_fact:
     build_pcf_summary:
       build_number: "{{ build_pcf_build_no }}"
       branch: "{{ build_pcf_branch }}"
-      module_version: "{{ build_pcf_module_ver }}"
-      environment: "{{ build_pcf_environment }}"
-      artifacts_count: "{{ built_rpms.matched | default(0) }}"
-      log_file: "{{ build_pcf_log }}"
-      completion_time: "{{ ansible_date_time.iso8601 }}"
       status: "SUCCESS"
-  tags:
-    - always
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+  tags: [always]
