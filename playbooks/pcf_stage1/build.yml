@@ -269,6 +269,7 @@
               -r "{{ pcf_build_no }}" \
               -d "{{ build_root }}" \
               -P pcf \
+              -K "/usr/src/kernels/$(ls /usr/src/kernels | tail -1)" \
               -v "{{ pcf_module_ver }}" \
               -t "https://scm.forge.avaya.com/svnroot/aurora/branches/{{ pcf_branch }}"
             
