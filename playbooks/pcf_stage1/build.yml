@@ -203,16 +203,31 @@
         - name: "Copy SVN source to build directory"
           shell: |
             cp -r {{ pcf_source }}/* {{ build_root }}/
+            cp -r {{ pcf_source }}/.[^.]* {{ build_root }}/ 2>/dev/null || true
             echo "Source code copied successfully"
           register: copy_result
           changed_when: true
 
-        - name: "Verify source code copied"
-          find:
-            paths: "{{ build_root }}"
-            file_type: file
-          register: source_files
-          failed_when: source_files.matched == 0
+        - name: "Check what was copied"
+          shell: |
+            echo "Build directory contents:"
+            ls -la {{ build_root }}/ | head -20
+            echo ""
+            echo "Total items:"
+            find {{ build_root }} -type f | wc -l
+            find {{ build_root }} -type d | wc -l
+          register: contents_check
+          changed_when: false
+
+        - name: "Display build directory contents"
+          debug:
+            msg: "{{ contents_check.stdout }}"
+
+        - name: "Verify bambooBuildRpms exists in build directory"
+          stat:
+            path: "{{ build_root }}/icu/buildtools/bambooBuildRpms"
+          register: build_script_in_build_dir
+          failed_when: not build_script_in_build_dir.stat.exists
 
         - name: "Display source copy status"
           debug:
@@ -220,10 +235,10 @@
               ✅ Source code copied:
               - Source: {{ pcf_source }}
               - Destination: {{ build_root }}
-              - Files: {{ source_files.matched }}
+              - Build Script: {{ build_root }}/icu/buildtools/bambooBuildRpms ✅
 
       tags: [prepare]
-
+      
     # =========================================================================
     # STEP 6: Execute PCF Build
     # =========================================================================
