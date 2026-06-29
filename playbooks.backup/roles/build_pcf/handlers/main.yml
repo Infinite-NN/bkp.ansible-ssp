@@ -1,0 +1,293 @@
+---
+# =============================================================
+# Build PCF Role -- Handlers
+# Handlers are triggered by notify: statements in tasks.
+# Handlers run once at end of play, not immediately.
+#
+# Best practices:
+# - Keep handlers simple and idempotent
+# - Use ignore_errors: yes for non-critical cleanups
+# - Always include error handling
+# =============================================================
+
+# ---------------------------------------------------------
+# Cleanup Handlers
+# ---------------------------------------------------------
+
+- name: cleanup build directory on success
+  notify: "cleanup build directory"
+  block:
+    - name: "Remove build working directory"
+      file:
+        path: "{{ build_pcf_build_dir }}"
+        state: absent
+
+    - name: "Log cleanup completion"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[CLEANUP][BUILD_DIR] Removed -- {{ ansible_date_time.iso8601 }}"
+        insertafter: EOF
+      ignore_errors: yes
+
+  rescue:
+    - name: "?  Build directory cleanup warning"
+      debug:
+        msg: "Could not remove build directory {{ build_pcf_build_dir }} (non-critical)"
+
+  when: cleanup_build_dir_on_success | default(false) | bool
+  tags:
+    - cleanup
+    - cleanup_build_dir
+
+
+
+- name: cleanup kernel work directory
+  notify: "cleanup kernel work dir"
+  block:
+    - name: "Remove kernel work directory"
+      file:
+        path: "{{ kernel_work_dir }}"
+        state: absent
+
+    - name: "Log kernel cleanup completion"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[CLEANUP][KERNEL] Work dir removed -- {{ ansible_date_time.iso8601 }}"
+        insertafter: EOF
+      ignore_errors: yes
+
+  rescue:
+    - name: "?  Kernel directory cleanup warning"
+      debug:
+        msg: "Could not remove kernel work directory (non-critical)"
+
+  when: cleanup_kernel_work_on_success | default(false) | bool
+  tags:
+    - cleanup
+    - cleanup_kernel
+
+
+
+- name: remove staged kernel rpm from sandbox
+  notify: "remove staged kernel rpm"
+  block:
+    - name: "Locate staged kernel RPM in sandbox"
+      find:
+        paths: "{{ sandbox_path }}/tmp"
+        patterns: "kernel-devel-*.rpm"
+        file_type: file
+      register: staged_kernel_rpms
+      ignore_errors: yes
+
+    - name: "Remove staged RPMs"
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ staged_kernel_rpms.files | default([]) }}"
+      ignore_errors: yes
+
+    - name: "Log staged RPM removal"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[CLEANUP][KERNEL_SANDBOX] {{ staged_kernel_rpms.matched | default(0) }} RPM(s) removed -- {{ ansible_date_time.iso8601 }}"
+        insertafter: EOF
+      ignore_errors: yes
+
+  rescue:
+    - name: "?  Sandbox cleanup warning"
+      debug:
+        msg: "Could not clean sandbox temp directory (non-critical)"
+
+  tags:
+    - cleanup
+    - cleanup_kernel
+
+
+
+- name: remove stale pcf rpms from agent home
+  notify: "remove stale pcf rpms"
+  block:
+    - name: "Search for old PCF RPMs"
+      find:
+        paths: "{{ build_agent_home }}"
+        patterns: "pcf-module-*.rpm"
+        recurse: yes
+        file_type: file
+      register: stale_pcf_rpms
+
+    - name: "Remove found RPMs"
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ stale_pcf_rpms.files | default([]) }}"
+      when: stale_pcf_rpms.matched > 0
+
+    - name: "Log stale RPM removal"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[CLEANUP][STALE_RPMS] Removed {{ stale_pcf_rpms.matched | default(0) }} old RPM(s) -- {{ ansible_date_time.iso8601 }}"
+        insertafter: EOF
+      ignore_errors: yes
+
+  rescue:
+    - name: "?  Stale RPM cleanup warning"
+      debug:
+        msg: "Could not remove all stale RPMs (non-critical)"
+
+  when: remove_stale_rpms | default(true) | bool
+  tags:
+    - cleanup
+    - cleanup_rpms
+
+
+
+- name: restore repository permissions
+  notify: "restore repo permissions"
+  block:
+    - name: "Verify repository exists"
+      stat:
+        path: "{{ build_pcf_svn_repo }}"
+      register: repo_stat
+
+    - name: "Restore repository ownership"
+      file:
+        path: "{{ build_pcf_svn_repo }}"
+        owner: "{{ build_user | default('bambooagent') }}"
+        group: "{{ build_user | default('bambooagent') }}"
+        recurse: yes
+        mode: "u=rwX,g=rX,o="
+      when: repo_stat.exists
+      ignore_errors: yes
+
+    - name: "Log permission restore"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[CLEANUP][PERMS] Repository permissions restored -- {{ ansible_date_time.iso8601 }}"
+        insertafter: EOF
+      ignore_errors: yes
+
+  rescue:
+    - name: "?  Permission restore warning"
+      debug:
+        msg: "Could not restore repository permissions (check manually)"
+
+  tags:
+    - cleanup
+    - cleanup_permissions
+
+
+
+# ---------------------------------------------------------
+# Logging Handlers
+# ---------------------------------------------------------
+
+- name: log build failure
+  notify: "log build failure"
+  block:
+    - name: "Write failure header to log"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: |
+          
+          {{ log_separator | default('==========================================================') }}
+          BUILD FAILURE LOG
+          {{ log_separator | default('==========================================================') }}
+          Timestamp : {{ ansible_date_time.iso8601 }}
+          Host      : {{ inventory_hostname }}
+          Branch    : {{ build_pcf_branch | default('UNKNOWN') }}
+          Build No  : {{ build_pcf_build_no | default('UNKNOWN') }}
+          Status    : FAILED
+          {{ log_separator | default('==========================================================') }}
+        insertafter: EOF
+      ignore_errors: yes
+
+  rescue:
+    - debug:
+        msg: "Could not write failure log (non-critical)"
+
+  tags:
+    - logging
+    - logging_failure
+
+
+
+- name: append build summary to log
+  notify: "append build summary"
+  block:
+    - name: "Generate build summary"
+      copy:
+        content: |
+          
+          {{ log_separator | default('==========================================================') }}
+          BUILD SUMMARY
+          {{ log_separator | default('==========================================================') }}
+          Build Date    : {{ ansible_date_time.iso8601 }}
+          Host          : {{ inventory_hostname }}
+          Branch        : {{ build_pcf_branch | default('UNKNOWN') }}
+          Version       : {{ build_pcf_version | default('UNKNOWN') }}
+          Build Number  : {{ build_pcf_build_no | default('UNKNOWN') }}
+          Module Version: {{ build_pcf_module_ver | default('UNKNOWN') }}
+          
+          Build Result:
+            Status      : {{ build_result.rc | default('UNKNOWN') }}
+            RPM         : {{ build_pcf_rpm_path.path | default('NOT_GENERATED') | basename }}
+            RPM Size    : {{ build_pcf_rpm_path.size | default('N/A') }} bytes
+          
+          Artifacts:
+            Build Dir   : {{ build_pcf_build_dir | default('UNKNOWN') }}
+            Release Dir : {{ build_pcf_releases_dir | default('UNKNOWN') }}
+            Log File    : {{ build_pcf_log | default('UNKNOWN') }}
+          
+          Build Duration: Start={{ build_start_timestamp.stdout | default('N/A') }} End={{ ansible_date_time.epoch | default('N/A') }}
+          
+          {{ log_separator | default('==========================================================') }}
+        dest: "{{ build_pcf_log }}.summary"
+        mode: '0644'
+      ignore_errors: yes
+
+    - name: "Append summary to main log"
+      shell: |
+        cat "{{ build_pcf_log }}.summary" >> "{{ build_pcf_log }}" 2>/dev/null || true
+      args:
+        executable: /bin/bash
+      ignore_errors: yes
+
+  rescue:
+    - debug:
+        msg: "Could not generate build summary (non-critical)"
+
+  tags:
+    - logging
+    - logging_summary
+
+# ---------------------------------------------------------
+# Notification Handlers
+# ---------------------------------------------------------
+
+- name: notify build completion
+  notify: "notify build completion"
+  block:
+    - name: "Log notification trigger"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[NOTIFY] Build completion notification triggered -- {{ ansible_date_time.iso8601 }}"
+        insertafter: EOF
+      ignore_errors: yes
+
+    - name: "Display notification message"
+      debug:
+        msg: |
+          ? BUILD COMPLETION NOTIFICATION
+          +- Status  : Complete
+          +- Branch  : {{ build_pcf_branch }}
+          +- Build   : {{ build_pcf_build_no }}
+          +- Log     : {{ build_pcf_log }}
+
+  rescue:
+    - debug:
+        msg: "Notification handler warning (non-critical)"
+
+  when: notify_on_success | default(true) | bool
+  tags:
+    - notifications
+    - notifications_success

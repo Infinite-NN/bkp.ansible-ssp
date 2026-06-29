@@ -1,0 +1,167 @@
+---
+# =============================================================
+# Security Updates Role -- Default Configuration
+# Manages security RPM downloads and updates
+# =============================================================
+
+# ---------------------------------------------------------
+# Repository Configuration
+# ---------------------------------------------------------
+
+# RHEL repository names
+dnf_repo_baseos: "rhel-8-for-x86_64-baseos-rpms"
+dnf_repo_appstream: "rhel-8-for-x86_64-appstream-rpms"
+
+# Excluded packages (never update)
+security_update_exclude_packages:
+  - "nginx*"
+  - "docker*"
+  - "podman*"
+  - "kernel-debug*"
+  - "grub2-efi*"
+
+# ---------------------------------------------------------
+# Download Configuration
+# ---------------------------------------------------------
+
+# Download destination for security RPMs
+security_rpms_download_dir: "/repos/security"
+
+# Download only security updates (not regular updates)
+security_only: true
+
+# Archive old security RPMs
+archive_security_rpms: true
+
+# Archive directory
+security_rpms_archive_dir: "/repos/archive/security"
+
+# ---------------------------------------------------------
+# Download Behavior
+# ---------------------------------------------------------
+
+# Maximum retry attempts for downloads
+max_download_retries: 5
+
+# Retry delay (seconds)
+download_retry_delay: 30
+
+# Download timeout (seconds)
+download_timeout: 1200
+
+# Bandwidth limit (KB/s) -- 0 for unlimited
+bandwidth_limit: 0
+
+# ---------------------------------------------------------
+# RPM Validation
+# ---------------------------------------------------------
+
+# Verify RPM signatures
+verify_rpm_signatures: false
+
+# Verify RPM integrity (checksums)
+verify_rpm_integrity: true
+
+# Remove 32-bit (i686) RPMs
+remove_i686_rpms: true
+
+# ---------------------------------------------------------
+# Security Advisory Configuration
+# ---------------------------------------------------------
+
+# Query CVE information
+query_cve_information: true
+
+# Query RHSA advisory information
+query_rhsa_information: true
+
+# Severity levels to include
+security_severity_levels:
+  - Critical
+  - Important
+  - Moderate
+  - Low
+
+# ---------------------------------------------------------
+# Report Generation
+# ---------------------------------------------------------
+
+# Generate security report
+generate_security_report: true
+
+# Report format (text, html, json)
+report_format: "text"
+
+# Report output location
+security_report_dir: "/tmp"
+
+# Report filename
+security_report_filename: "security_update_report.txt"
+
+# Include CVE details in report
+report_include_cve_details: true
+
+# Include RHSA details in report
+report_include_rhsa_details: true
+
+# ---------------------------------------------------------
+# Validation Configuration
+# ---------------------------------------------------------
+
+# Validate downloaded RPMs against advisories
+validate_rpms: true
+
+# Minimum RPM count to consider update successful
+min_security_rpm_count: 1
+
+# Fail if no security updates available
+fail_if_no_updates: false
+
+# ---------------------------------------------------------
+# Logging Configuration
+# ---------------------------------------------------------
+
+# Log directory (inherited from common)
+log_dir: "/var/log/avaya_pipeline"
+
+# Enable detailed security update logging
+enable_detailed_logging: true
+
+# ---------------------------------------------------------
+# Cache Configuration
+# ---------------------------------------------------------
+
+# Cache DNF metadata
+cache_dnf_metadata: true
+
+# Cache time to live (hours)
+cache_ttl_hours: 24
+
+# ---------------------------------------------------------
+# Feature Flags
+# ---------------------------------------------------------
+
+# Enable automatic security updates
+enable_auto_security_updates: true
+
+# Enable security update notifications
+enable_notifications: true
+
+# Notify on no-updates scenario
+notify_on_no_updates: false
+
+# ---------------------------------------------------------
+# Cleanup Configuration
+# ---------------------------------------------------------
+
+# Clean up old security reports
+cleanup_old_reports: true
+
+# Report retention days
+report_retention_days: 30
+
+# Clean up old downloaded RPMs
+cleanup_old_rpms: true
+
+# RPM retention days
+rpm_retention_days: 7
