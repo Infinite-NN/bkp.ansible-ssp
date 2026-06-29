@@ -249,69 +249,32 @@
             path: "{{ log_file }}"
             line: "\n[BUILD_START] {{ ansible_date_time.iso8601 }}"
             insertafter: EOF
-
+        
         - name: "Run PCF build script (Inside Chroot)"
-      shell: |
-        set -euo pipefail
-        
-        echo "🔨 Starting PCF build inside chroot..."
-        echo "Build No: {{ pcf_build_no }}"
-        echo "Branch: {{ pcf_branch }}"
-        echo "Module Ver: {{ pcf_module_ver }}"
-        echo ""
-        
-        # Run build INSIDE chroot where make/gcc/tools exist
-        sudo chroot /sandbox/rhel810 /bin/bash << 'CHROOT_EOF'
-        cd {{ build_root }}
-        
-        ./icu/buildtools/bambooBuildRpms \
-          -u bambooagent \
-          -r "{{ pcf_build_no }}" \
-          -d "{{ build_root }}" \
-          -P pcf \
-          -v "{{ pcf_module_ver }}" \
-          -t "https://scm.forge.avaya.com/svnroot/aurora/branches/{{ pcf_branch }}"
-        
-        CHROOT_EOF
-        
-        BUILD_STATUS=$?
-        
-        if [ $BUILD_STATUS -eq 0 ]; then
-          echo ""
-          echo "✅ PCF build completed successfully"
-        else
-          echo ""
-          echo "❌ PCF build FAILED with status: $BUILD_STATUS"
-          exit $BUILD_STATUS
-        fi
-      args:
-        executable: /bin/bash
-      register: build_output
-      timeout: 10800  # 3 hours
-      tags: [build]
           shell: |
             set -euo pipefail
             
-            echo "🔨 Starting PCF build (inside chroot)..."
+            echo "🔨 Starting PCF build inside chroot..."
             echo "Build No: {{ pcf_build_no }}"
             echo "Branch: {{ pcf_branch }}"
             echo "Module Ver: {{ pcf_module_ver }}"
             echo ""
             
-            # Run build inside chroot where all build tools are available
-            sudo chroot /sandbox/rhel810 bash -c "
-              cd {{ build_root }}
-              
-              ./icu/buildtools/bambooBuildRpms \
-                -u bambooagent \
-                -r '{{ pcf_build_no }}' \
-                -d '{{ build_root }}' \
-                -P pcf \
-                -v '{{ pcf_module_ver }}' \
-                -t 'https://scm.forge.avaya.com/svnroot/aurora/branches/{{ pcf_branch }}'
-            " 2>&1 | tee -a {{ log_file }}
+            # Run build INSIDE chroot where make/gcc/tools exist
+            sudo chroot /sandbox/rhel810 /bin/bash << 'CHROOT_EOF'
+            cd {{ build_root }}
             
-            BUILD_STATUS=${PIPESTATUS[0]}
+            ./icu/buildtools/bambooBuildRpms \
+              -u bambooagent \
+              -r "{{ pcf_build_no }}" \
+              -d "{{ build_root }}" \
+              -P pcf \
+              -v "{{ pcf_module_ver }}" \
+              -t "https://scm.forge.avaya.com/svnroot/aurora/branches/{{ pcf_branch }}"
+            
+            CHROOT_EOF
+            
+            BUILD_STATUS=$?
             
             if [ $BUILD_STATUS -eq 0 ]; then
               echo ""
