@@ -1,0 +1,383 @@
+---
+# =============================================================================
+# PCF Build - Stage 1 - Compilation Only
+# =============================================================================
+# Purpose: Compile PCF module from source code
+# Input:   branch, build_no, module_ver (via -e flags)
+# Output:  PCF RPM in /root/releases
+# =============================================================================
+
+- name: "PCF Build - Compilation Stage"
+  hosts: buildserver
+  become: yes
+  gather_facts: yes
+
+  # ===========================================================================
+  # VARIABLES - Simple, direct assignments
+  # ===========================================================================
+  vars:
+    # Parameters passed via command line (-e flag)
+    pcf_branch: "{{ branch }}"
+    pcf_build_no: "{{ build_no }}"
+    pcf_module_ver: "{{ module_ver }}"
+    
+    # Computed paths (based on above)
+    build_root: "/tmp/pcf_build_{{ pcf_build_no }}"
+    releases_dir: "/root/releases"
+    log_file: "/var/log/pcf_build_{{ pcf_build_no }}.log"
+
+  # ===========================================================================
+  # TASKS - Build PCF
+  # ===========================================================================
+  tasks:
+
+    # =========================================================================
+    # STEP 1: Validate Input Parameters
+    # =========================================================================
+    - name: "Step 1️⃣ - Validate Input Parameters"
+      block:
+        - name: "Check branch is provided"
+          assert:
+            that:
+              - pcf_branch is defined
+              - pcf_branch | length > 0
+            fail_msg: "❌ branch not provided"
+            success_msg: "✅ branch: {{ pcf_branch }}"
+
+        - name: "Check build_no is provided"
+          assert:
+            that:
+              - pcf_build_no is defined
+              - pcf_build_no | length > 0
+            fail_msg: "❌ build_no not provided"
+            success_msg: "✅ build_no: {{ pcf_build_no }}"
+
+        - name: "Check module_ver is provided"
+          assert:
+            that:
+              - pcf_module_ver is defined
+              - pcf_module_ver | length > 0
+            fail_msg: "❌ module_ver not provided"
+            success_msg: "✅ module_ver: {{ pcf_module_ver }}"
+
+      tags: [validate]
+
+    # =========================================================================
+    # STEP 2: Display Build Configuration
+    # =========================================================================
+    - name: "Step 2️⃣ - Display Build Configuration"
+      debug:
+        msg: |
+          ════════════════════════════════════════════════════════
+          🔨 PCF BUILD CONFIGURATION
+          ════════════════════════════════════════════════════════
+          Branch          : {{ pcf_branch }}
+          Build Number    : {{ pcf_build_no }}
+          Module Version  : {{ pcf_module_ver }}
+          
+          Build Root      : {{ build_root }}
+          Releases Dir    : {{ releases_dir }}
+          Log File        : {{ log_file }}
+          
+          Build Host      : {{ inventory_hostname }}
+          Build User      : root
+          Build Date      : {{ ansible_date_time.iso8601 }}
+          ════════════════════════════════════════════════════════
+      tags: [always]
+
+    # =========================================================================
+    # STEP 3: Verify System Requirements
+    # =========================================================================
+    - name: "Step 3️⃣ - Verify System Requirements"
+      block:
+        - name: "Check RHEL version"
+          assert:
+            that:
+              - ansible_distribution == "RedHat" or ansible_distribution == "CentOS"
+              - ansible_distribution_major_version == "8"
+            fail_msg: "❌ RHEL 8 required. Found: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+            success_msg: "✅ RHEL {{ ansible_distribution_major_version }} detected"
+
+        - name: "Check required tools exist"
+          stat:
+            path: "{{ item }}"
+          register: tool_check
+          failed_when: not tool_check.stat.exists
+          loop:
+            - /usr/sbin/chroot
+            - /usr/bin/rpm
+            - /usr/bin/rsync
+
+        - name: "Check disk space (minimum 20GB)"
+          shell: df -BG / | awk 'NR==2 {gsub("G", ""); print $4}'
+          register: disk_free
+          changed_when: false
+          failed_when: (disk_free.stdout | int) < 20
+
+        - name: "Display disk space"
+          debug:
+            msg: "✅ Disk space: {{ disk_free.stdout }}GB available (required: 20GB)"
+
+      tags: [validate]
+
+    # =========================================================================
+    # STEP 4: Create Build Environment
+    # =========================================================================
+    - name: "Step 4️⃣ - Create Build Environment"
+      block:
+        - name: "Create build directory"
+          file:
+            path: "{{ build_root }}"
+            state: directory
+            mode: "0755"
+
+        - name: "Create releases directory"
+          file:
+            path: "{{ releases_dir }}"
+            state: directory
+            mode: "0755"
+
+        - name: "Create log directory"
+          file:
+            path: "{{ log_file | dirname }}"
+            state: directory
+            mode: "0755"
+
+        - name: "Initialize log file"
+          copy:
+            content: |
+              ════════════════════════════════════════════════════════
+              PCF BUILD LOG
+              ════════════════════════════════════════════════════════
+              Build Number    : {{ pcf_build_no }}
+              Branch          : {{ pcf_branch }}
+              Module Version  : {{ pcf_module_ver }}
+              
+              Build Host      : {{ inventory_hostname }}
+              Start Time      : {{ ansible_date_time.iso8601 }}
+              ════════════════════════════════════════════════════════
+              
+            dest: "{{ log_file }}"
+            mode: "0644"
+
+        - name: "Display build environment ready"
+          debug:
+            msg: |
+              ✅ Build environment created:
+              - Build Root: {{ build_root }}
+              - Releases Dir: {{ releases_dir }}
+              - Log File: {{ log_file }}
+
+      tags: [prepare]
+
+    # =========================================================================
+    # STEP 5: Copy Source Code
+    # =========================================================================
+    - name: "Step 5️⃣ - Copy Source Code to Build Directory"
+      block:
+        - name: "Verify SVN source exists"
+          stat:
+            path: /opt/pcf
+          register: svn_check
+          failed_when: not svn_check.stat.exists
+
+        - name: "Copy SVN repository to build directory"
+          shell: |
+            cp -r /opt/pcf/* {{ build_root }}/
+            echo "Source code copied"
+          register: copy_result
+          changed_when: true
+
+        - name: "Verify source code copied"
+          find:
+            paths: "{{ build_root }}"
+            file_type: file
+          register: source_files
+          failed_when: source_files.matched == 0
+
+        - name: "Display source code status"
+          debug:
+            msg: |
+              ✅ Source code copied:
+              - Files: {{ source_files.matched }}
+              - Build Root: {{ build_root }}
+
+      tags: [prepare]
+
+    # =========================================================================
+    # STEP 6: Execute PCF Build
+    # =========================================================================
+    - name: "Step 6️⃣ - Execute PCF Compilation"
+      block:
+        - name: "Log build start"
+          lineinfile:
+            path: "{{ log_file }}"
+            line: "\n[BUILD_START] {{ ansible_date_time.iso8601 }}"
+            insertafter: EOF
+
+        - name: "Run PCF build via chroot"
+          shell: |
+            set -euo pipefail
+            
+            echo "🔨 Starting PCF build..."
+            echo "Build No: {{ pcf_build_no }}"
+            echo "Branch: {{ pcf_branch }}"
+            echo "Module Ver: {{ pcf_module_ver }}"
+            echo ""
+            
+            # Execute build in chroot
+            sudo chroot /sandbox/rhel810 \
+              /opt/pcf/icu/buildtools/bambooBuildRpms \
+              -u bambooagent \
+              -r "{{ pcf_build_no }}" \
+              -d "/opt/pcf" \
+              -P pcf \
+              -v "{{ pcf_module_ver }}" \
+              -t "https://scm.forge.avaya.com/svnroot/aurora/branches/{{ pcf_branch }}" \
+              2>&1 | tee -a {{ log_file }}
+            
+            BUILD_STATUS=${PIPESTATUS[0]}
+            
+            if [ $BUILD_STATUS -eq 0 ]; then
+              echo ""
+              echo "✅ PCF build completed successfully"
+            else
+              echo ""
+              echo "❌ PCF build FAILED with status: $BUILD_STATUS"
+              exit $BUILD_STATUS
+            fi
+          args:
+            executable: /bin/bash
+          register: build_output
+          timeout: 10800  # 3 hours
+          tags: [build]
+
+        - name: "Log build completion"
+          lineinfile:
+            path: "{{ log_file }}"
+            line: "[BUILD_END] {{ ansible_date_time.iso8601 }}"
+            insertafter: EOF
+
+      rescue:
+        - name: "❌ Build failed"
+          debug:
+            msg: |
+              ❌ PCF BUILD FAILED
+              
+              See log file for details:
+              {{ log_file }}
+              
+              Last 20 lines:
+              {{ build_output.stderr_lines[-20:] | default([]) | join('\n') }}
+          
+        - name: "Fail the play"
+          fail:
+            msg: "PCF build failed. Check {{ log_file }}"
+
+      tags: [build]
+
+    # =========================================================================
+    # STEP 7: Locate Generated RPM
+    # =========================================================================
+    - name: "Step 7️⃣ - Locate Generated RPM"
+      block:
+        - name: "Search for generated RPM"
+          find:
+            paths:
+              - "{{ build_root }}"
+              - "{{ releases_dir }}"
+              - "/tmp"
+            patterns: "pcf-*.rpm"
+            recurse: yes
+          register: found_rpms
+
+        - name: "Verify RPM was generated"
+          assert:
+            that:
+              - found_rpms.matched > 0
+            fail_msg: |
+              ❌ NO RPM GENERATED
+              
+              Search paths:
+              - {{ build_root }}
+              - {{ releases_dir }}
+              - /tmp
+              
+              Check {{ log_file }} for build errors
+            success_msg: "✅ Found {{ found_rpms.matched }} RPM file(s)"
+
+        - name: "Select most recent RPM"
+          set_fact:
+            pcf_rpm: "{{ found_rpms.files | sort(attribute='mtime', reverse=true) | first }}"
+
+        - name: "Display RPM details"
+          debug:
+            msg: |
+              ✅ PCF RPM GENERATED
+              
+              File: {{ pcf_rpm.path }}
+              Name: {{ pcf_rpm.path | basename }}
+              Size: {{ (pcf_rpm.size / 1024 / 1024) | round(2) }}MB
+              Modified: {{ ansible_date_time.iso8601 }}
+
+      tags: [validate]
+
+    # =========================================================================
+    # STEP 8: Copy RPM to Releases Directory
+    # =========================================================================
+    - name: "Step 8️⃣ - Copy RPM to Releases"
+      block:
+        - name: "Copy RPM to releases directory"
+          copy:
+            src: "{{ pcf_rpm.path }}"
+            dest: "{{ releases_dir }}/{{ pcf_rpm.path | basename }}"
+            remote_src: yes
+            mode: "0644"
+          register: rpm_copy
+
+        - name: "Verify RPM in releases directory"
+          stat:
+            path: "{{ releases_dir }}/{{ pcf_rpm.path | basename }}"
+          register: released_rpm
+
+        - name: "Display final status"
+          debug:
+            msg: |
+              ════════════════════════════════════════════════════════
+              ✅ PCF BUILD SUCCESSFUL
+              ════════════════════════════════════════════════════════
+              
+              RPM Location: {{ released_rpm.stat.path }}
+              RPM Size    : {{ (released_rpm.stat.size / 1024 / 1024) | round(2) }}MB
+              
+              Build Log   : {{ log_file }}
+              
+              Next Steps:
+              1. Verify RPM contents
+              2. Deploy to test environment
+              3. Run validation tests
+              
+              ════════════════════════════════════════════════════════
+
+      tags: [publish]
+
+    # =========================================================================
+    # STEP 9: Summary
+    # =========================================================================
+    - name: "Step 9️⃣ - Build Summary"
+      debug:
+        msg: |
+          ════════════════════════════════════════════════════════
+          🎉 PCF BUILD PIPELINE COMPLETED
+          ════════════════════════════════════════════════════════
+          Status      : ✅ SUCCESS
+          Build No    : {{ pcf_build_no }}
+          Branch      : {{ pcf_branch }}
+          Module Ver  : {{ pcf_module_ver }}
+          
+          Artifact    : {{ releases_dir }}/{{ pcf_rpm.path | basename }}
+          Log File    : {{ log_file }}
+          
+          Duration    : (check log for exact time)
+          ════════════════════════════════════════════════════════
+      tags: [always]
