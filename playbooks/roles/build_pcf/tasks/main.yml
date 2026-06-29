@@ -1,7 +1,32 @@
 ---
 # =============================================================================
-# Build PCF Role - Main Task Orchestrator
+# Build PCF Role - Main Task Orchestrator (FIXED - No Early Variable Refs)
 # =============================================================================
+
+# ⚠️ IMPORTANT: Do NOT reference variables in the first task!
+# Roles need to verify variables exist before using them.
+
+- name: "🔧 Verify role variables exist"
+  assert:
+    that:
+      - build_pcf_branch is defined
+      - build_pcf_build_no is defined
+      - build_pcf_module_ver is defined
+      - build_pcf_environment is defined
+      - build_pcf_build_root is defined
+      - build_pcf_releases_dir is defined
+      - build_pcf_log is defined
+    fail_msg: |
+      ❌ Required variables not passed to role:
+      - build_pcf_branch: {{ build_pcf_branch | default('NOT_DEFINED') }}
+      - build_pcf_build_no: {{ build_pcf_build_no | default('NOT_DEFINED') }}
+      - build_pcf_module_ver: {{ build_pcf_module_ver | default('NOT_DEFINED') }}
+      - build_pcf_environment: {{ build_pcf_environment | default('NOT_DEFINED') }}
+      - build_pcf_build_root: {{ build_pcf_build_root | default('NOT_DEFINED') }}
+      - build_pcf_releases_dir: {{ build_pcf_releases_dir | default('NOT_DEFINED') }}
+      - build_pcf_log: {{ build_pcf_log | default('NOT_DEFINED') }}
+    success_msg: "✅ All required role variables present"
+  tags: [always]
 
 - name: "🔧 BUILD_PCF: Role initialization"
   debug:
@@ -61,7 +86,7 @@
   tags: [always]
 
 # =============================================================================
-# COMPUTE DERIVED VARIABLES (do this AFTER variables are available)
+# COMPUTE DERIVED VARIABLES (do this AFTER variables are verified)
 # =============================================================================
 
 - name: "🔧 Compute derived variables"
@@ -103,18 +128,17 @@
     - name: "Validate branch format (10.2.1.X_orion_int)"
       assert:
         that:
-          - build_pcf_branch is regex(branch_pattern)
+          - build_pcf_branch is regex('^10\.2\.1\.[0-9]+_orion_int$')
         fail_msg: |
           ❌ Invalid branch format: {{ build_pcf_branch }}
           Expected: 10.2.1.X_orion_int (e.g., 10.2.1.0_orion_int)
-          Pattern: {{ branch_pattern }}
         success_msg: "✅ Branch format valid: {{ build_pcf_branch }}"
       tags: [preflight]
 
     - name: "Validate build_no is numeric"
       assert:
         that:
-          - build_pcf_build_no is regex(build_no_pattern)
+          - build_pcf_build_no is regex('^[0-9]+$')
         fail_msg: "❌ build_no must be numeric, got: {{ build_pcf_build_no }}"
         success_msg: "✅ Build number valid: {{ build_pcf_build_no }}"
       tags: [preflight]
@@ -122,11 +146,10 @@
     - name: "Validate module_ver format (X.X.X.X)"
       assert:
         that:
-          - build_pcf_module_ver is regex(module_ver_pattern)
+          - build_pcf_module_ver is regex('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
         fail_msg: |
           ❌ Invalid module version: {{ build_pcf_module_ver }}
           Expected format: X.X.X.X (e.g., 4.3.4.193953)
-          Pattern: {{ module_ver_pattern }}
         success_msg: "✅ Module version format valid: {{ build_pcf_module_ver }}"
       tags: [preflight]
 
