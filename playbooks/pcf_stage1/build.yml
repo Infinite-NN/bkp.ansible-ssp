@@ -238,7 +238,7 @@
               - Build Script: {{ build_root }}/icu/buildtools/bambooBuildRpms ✅
 
       tags: [prepare]
-      
+
     # =========================================================================
     # STEP 6: Execute PCF Build
     # =========================================================================
@@ -250,7 +250,7 @@
             line: "\n[BUILD_START] {{ ansible_date_time.iso8601 }}"
             insertafter: EOF
 
-        - name: "Run PCF build via chroot"
+        - name: "Run PCF build script"
           shell: |
             set -euo pipefail
             
@@ -260,12 +260,14 @@
             echo "Module Ver: {{ pcf_module_ver }}"
             echo ""
             
-            # Execute build in chroot
-            sudo chroot /sandbox/rhel810 \
-              {{ pcf_source }}/icu/buildtools/bambooBuildRpms \
+            # Change to build directory and execute build script
+            cd {{ build_root }}
+            
+            # Execute build script
+            ./icu/buildtools/bambooBuildRpms \
               -u bambooagent \
               -r "{{ pcf_build_no }}" \
-              -d "{{ pcf_source }}" \
+              -d "{{ build_root }}" \
               -P pcf \
               -v "{{ pcf_module_ver }}" \
               -t "https://scm.forge.avaya.com/svnroot/aurora/branches/{{ pcf_branch }}" \
@@ -298,6 +300,9 @@
           debug:
             msg: |
               ❌ PCF BUILD FAILED
+              
+              Command output:
+              {{ build_output.stdout }}
               
               See log file for details:
               {{ log_file }}
