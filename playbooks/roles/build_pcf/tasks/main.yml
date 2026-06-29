@@ -61,6 +61,22 @@
   tags: [always]
 
 # =============================================================================
+# COMPUTE DERIVED VARIABLES (do this AFTER variables are available)
+# =============================================================================
+
+- name: "🔧 Compute derived variables"
+  set_fact:
+    build_pcf_version: "{{ build_pcf_branch | regex_replace('_orion_int$', '') }}"
+  tags: [always]
+
+- name: "Display computed variables"
+  debug:
+    msg: |
+      Computed Variables:
+      - build_pcf_version: {{ build_pcf_version }}
+  tags: [always]
+
+# =============================================================================
 # STAGE 1: PRE-FLIGHT VALIDATION
 # =============================================================================
 
@@ -211,6 +227,7 @@
       ════════════════════════════════════════════════════════
       Build Number : {{ build_pcf_build_no }}
       Branch       : {{ build_pcf_branch }}
+      Version      : {{ build_pcf_version }}
       Log File     : {{ build_pcf_log }}
       ════════════════════════════════════════════════════════
   tags: [always]
@@ -220,6 +237,7 @@
     build_pcf_summary:
       build_number: "{{ build_pcf_build_no }}"
       branch: "{{ build_pcf_branch }}"
+      version: "{{ build_pcf_version }}"
       status: "SUCCESS"
       timestamp: "{{ ansible_date_time.iso8601 }}"
   tags: [always]
