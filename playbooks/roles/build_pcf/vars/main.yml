@@ -1,35 +1,30 @@
 ---
 # =============================================================================
-# Build PCF Role - Variable Definitions
+# Build PCF Role - Variables (Role-Internal Only)
 # =============================================================================
-# These OVERRIDE defaults/main.yml
-# These can be OVERRIDDEN by group_vars or -e at CLI
+# NOTE: Build parameters are passed FROM the playbook to the role.
+# This file should NOT redefine or template those parameters.
 # =============================================================================
 
-# Required Build Parameters (must be passed)
-build_pcf_branch: "{{ build_pcf_branch | default('UNDEFINED') }}"
-build_pcf_build_no: "{{ build_pcf_build_no | default('UNDEFINED') }}"
-build_pcf_module_ver: "{{ build_pcf_module_ver | default('UNDEFINED') }}"
-build_pcf_environment: "{{ build_pcf_environment | default('production') }}"
-
-# Derived Paths
-build_pcf_build_root: "{{ build_pcf_build_root | default('/tmp/pcf_builds/' + build_pcf_branch) }}"
-build_pcf_releases_dir: "{{ build_pcf_releases_dir | default('/root/releases') }}"
-build_pcf_log: "{{ build_pcf_log | default('/var/log/avaya_pipeline/build_pcf_' + build_pcf_build_no + '.log') }}"
-build_pcf_svn_repo: "{{ build_pcf_svn_repo | default('/opt/pcf') }}"
-build_pcf_build_dir: "{{ build_pcf_build_dir | default(build_pcf_build_root + '/' + build_pcf_branch) }}"
-
-# Computed Values
-build_pcf_version: "{{ build_pcf_branch | regex_replace('_orion_int$', '') }}"
-
-# Validation Patterns
+# ---------------------------------------------------------
+# VALIDATION PATTERNS (Regex) - Used in assertions
+# ---------------------------------------------------------
 branch_pattern: '^10\.2\.1\.[0-9]+_orion_int$'
 version_pattern: '^10\.2\.1\.[0-9]+$'
 module_ver_pattern: '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
 build_no_pattern: '^[0-9]+$'
 rpm_name_pattern: '^pcf-module-.*\.rpm$'
 
-# Feature Flags
+# ---------------------------------------------------------
+# DERIVED VARIABLES (computed from inputs)
+# ---------------------------------------------------------
+# Extract version from branch (e.g., 10.2.1.0_orion_int -> 10.2.1.0)
+# NOTE: build_pcf_branch is passed by the playbook
+build_pcf_version: "{{ build_pcf_branch | regex_replace('_orion_int$', '') }}"
+
+# ---------------------------------------------------------
+# FEATURE FLAGS
+# ---------------------------------------------------------
 fail_fast: true
 max_consecutive_retries: 3
 abort_on_role_failure: true

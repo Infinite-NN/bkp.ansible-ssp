@@ -3,6 +3,7 @@
 # Build PCF Role - Default Variables
 # =============================================================================
 # These are DEFAULTS - override with group_vars, host_vars, or -e at CLI
+# NO Jinja2 templating of undefined variables here!
 # =============================================================================
 
 # Build Environments & Paths

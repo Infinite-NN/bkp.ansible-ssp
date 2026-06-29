@@ -66,17 +66,52 @@
 
 - name: "⚡ STAGE 1: Pre-Flight Validation"
   block:
-    - name: "Verify variables are defined"
+    - name: "Check variables are not empty"
       assert:
         that:
-          - build_pcf_branch is defined and build_pcf_branch | length > 0
-          - build_pcf_build_no is defined and build_pcf_build_no | string | length > 0
-          - build_pcf_module_ver is defined and build_pcf_module_ver | length > 0
-          - build_pcf_environment is defined and build_pcf_environment | length > 0
-          - build_pcf_build_root is defined and build_pcf_build_root | length > 0
+          - build_pcf_branch | length > 0
+          - build_pcf_build_no | string | length > 0
+          - build_pcf_module_ver | length > 0
+          - build_pcf_environment | length > 0
+          - build_pcf_build_root | length > 0
         fail_msg: |
-          ❌ Missing required variables
-        success_msg: "✅ All variables present"
+          ❌ Missing or empty required variables
+          - build_pcf_branch: {{ build_pcf_branch }}
+          - build_pcf_build_no: {{ build_pcf_build_no }}
+          - build_pcf_module_ver: {{ build_pcf_module_ver }}
+          - build_pcf_environment: {{ build_pcf_environment }}
+          - build_pcf_build_root: {{ build_pcf_build_root }}
+        success_msg: "✅ All variables present and non-empty"
+      tags: [preflight]
+
+    - name: "Validate branch format (10.2.1.X_orion_int)"
+      assert:
+        that:
+          - build_pcf_branch is regex(branch_pattern)
+        fail_msg: |
+          ❌ Invalid branch format: {{ build_pcf_branch }}
+          Expected: 10.2.1.X_orion_int (e.g., 10.2.1.0_orion_int)
+          Pattern: {{ branch_pattern }}
+        success_msg: "✅ Branch format valid: {{ build_pcf_branch }}"
+      tags: [preflight]
+
+    - name: "Validate build_no is numeric"
+      assert:
+        that:
+          - build_pcf_build_no is regex(build_no_pattern)
+        fail_msg: "❌ build_no must be numeric, got: {{ build_pcf_build_no }}"
+        success_msg: "✅ Build number valid: {{ build_pcf_build_no }}"
+      tags: [preflight]
+
+    - name: "Validate module_ver format (X.X.X.X)"
+      assert:
+        that:
+          - build_pcf_module_ver is regex(module_ver_pattern)
+        fail_msg: |
+          ❌ Invalid module version: {{ build_pcf_module_ver }}
+          Expected format: X.X.X.X (e.g., 4.3.4.193953)
+          Pattern: {{ module_ver_pattern }}
+        success_msg: "✅ Module version format valid: {{ build_pcf_module_ver }}"
       tags: [preflight]
 
     - name: "Verify RHEL 8"
