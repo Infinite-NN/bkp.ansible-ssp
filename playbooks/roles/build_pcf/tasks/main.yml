@@ -1,10 +1,10 @@
 ---
 # =============================================================================
-# Build PCF Role - Main Task Orchestrator (FIXED - No Early Variable Refs)
+# Build PCF Role - Main Task Orchestrator (FIXED)
 # =============================================================================
-
-# ⚠️ IMPORTANT: Do NOT reference variables in the first task!
-# Roles need to verify variables exist before using them.
+# KEY FIX: Do NOT template undefined variables in fail_msg/success_msg
+# Use raw strings instead, then display variables in separate debug tasks
+# =============================================================================
 
 - name: "🔧 Verify role variables exist"
   assert:
@@ -16,16 +16,21 @@
       - build_pcf_build_root is defined
       - build_pcf_releases_dir is defined
       - build_pcf_log is defined
-    fail_msg: |
-      ❌ Required variables not passed to role:
-      - build_pcf_branch: {{ build_pcf_branch | default('NOT_DEFINED') }}
-      - build_pcf_build_no: {{ build_pcf_build_no | default('NOT_DEFINED') }}
-      - build_pcf_module_ver: {{ build_pcf_module_ver | default('NOT_DEFINED') }}
-      - build_pcf_environment: {{ build_pcf_environment | default('NOT_DEFINED') }}
-      - build_pcf_build_root: {{ build_pcf_build_root | default('NOT_DEFINED') }}
-      - build_pcf_releases_dir: {{ build_pcf_releases_dir | default('NOT_DEFINED') }}
-      - build_pcf_log: {{ build_pcf_log | default('NOT_DEFINED') }}
+    fail_msg: "Required variables not passed to role"
     success_msg: "✅ All required role variables present"
+  tags: [always]
+
+- name: "🔧 Display received variables"
+  debug:
+    msg: |
+      Variables received by role:
+      - build_pcf_branch: {{ build_pcf_branch }}
+      - build_pcf_build_no: {{ build_pcf_build_no }}
+      - build_pcf_module_ver: {{ build_pcf_module_ver }}
+      - build_pcf_environment: {{ build_pcf_environment }}
+      - build_pcf_build_root: {{ build_pcf_build_root }}
+      - build_pcf_releases_dir: {{ build_pcf_releases_dir }}
+      - build_pcf_log: {{ build_pcf_log }}
   tags: [always]
 
 - name: "🔧 BUILD_PCF: Role initialization"
@@ -82,11 +87,11 @@
   rescue:
     - name: "❌ Failed to initialize log"
       fail:
-        msg: "Cannot create log file at {{ build_pcf_log }}"
+        msg: "Cannot create log file"
   tags: [always]
 
 # =============================================================================
-# COMPUTE DERIVED VARIABLES (do this AFTER variables are verified)
+# COMPUTE DERIVED VARIABLES
 # =============================================================================
 
 - name: "🔧 Compute derived variables"
@@ -115,13 +120,7 @@
           - build_pcf_module_ver | length > 0
           - build_pcf_environment | length > 0
           - build_pcf_build_root | length > 0
-        fail_msg: |
-          ❌ Missing or empty required variables
-          - build_pcf_branch: {{ build_pcf_branch }}
-          - build_pcf_build_no: {{ build_pcf_build_no }}
-          - build_pcf_module_ver: {{ build_pcf_module_ver }}
-          - build_pcf_environment: {{ build_pcf_environment }}
-          - build_pcf_build_root: {{ build_pcf_build_root }}
+        fail_msg: "One or more required variables is empty"
         success_msg: "✅ All variables present and non-empty"
       tags: [preflight]
 
@@ -129,28 +128,24 @@
       assert:
         that:
           - build_pcf_branch is regex('^10\.2\.1\.[0-9]+_orion_int$')
-        fail_msg: |
-          ❌ Invalid branch format: {{ build_pcf_branch }}
-          Expected: 10.2.1.X_orion_int (e.g., 10.2.1.0_orion_int)
-        success_msg: "✅ Branch format valid: {{ build_pcf_branch }}"
+        fail_msg: "Invalid branch format"
+        success_msg: "✅ Branch format valid"
       tags: [preflight]
 
     - name: "Validate build_no is numeric"
       assert:
         that:
           - build_pcf_build_no is regex('^[0-9]+$')
-        fail_msg: "❌ build_no must be numeric, got: {{ build_pcf_build_no }}"
-        success_msg: "✅ Build number valid: {{ build_pcf_build_no }}"
+        fail_msg: "build_no must be numeric"
+        success_msg: "✅ Build number valid"
       tags: [preflight]
 
     - name: "Validate module_ver format (X.X.X.X)"
       assert:
         that:
           - build_pcf_module_ver is regex('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
-        fail_msg: |
-          ❌ Invalid module version: {{ build_pcf_module_ver }}
-          Expected format: X.X.X.X (e.g., 4.3.4.193953)
-        success_msg: "✅ Module version format valid: {{ build_pcf_module_ver }}"
+        fail_msg: "Invalid module version format"
+        success_msg: "✅ Module version format valid"
       tags: [preflight]
 
     - name: "Verify RHEL 8"
@@ -158,9 +153,8 @@
         that:
           - ansible_os_family == "RedHat"
           - ansible_distribution_major_version == "8"
-        fail_msg: |
-          ❌ RHEL 8 required (found {{ ansible_distribution }} {{ ansible_distribution_version }})
-        success_msg: "✅ RHEL {{ ansible_distribution_major_version }} detected"
+        fail_msg: "RHEL 8 required"
+        success_msg: "✅ RHEL 8 detected"
       tags: [preflight]
 
     - name: "Check disk space (minimum 20GB)"
@@ -183,11 +177,7 @@
     - name: "Log preflight success"
       lineinfile:
         path: "{{ build_pcf_log }}"
-        line: |
-          [PREFLIGHT] ✅ PASSED - {{ ansible_date_time.iso8601 }}
-            - OS: RHEL {{ ansible_distribution_major_version }}
-            - Disk: {{ disk_available.stdout }}GB available
-            - Build root: {{ build_pcf_build_root }}
+        line: "[PREFLIGHT] ✅ PASSED - {{ ansible_date_time.iso8601 }}"
         insertafter: "TASK EXECUTION LOG:"
       tags: [preflight, always]
 
@@ -199,7 +189,7 @@
         insertafter: "TASK EXECUTION LOG:"
 
     - fail:
-        msg: "Pre-flight validation failed. See {{ build_pcf_log }}"
+        msg: "Pre-flight validation failed"
   tags: [preflight, build_pcf]
 
 # =============================================================================
