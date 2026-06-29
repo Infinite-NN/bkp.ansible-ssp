@@ -1,10 +1,6 @@
 ---
 # =============================================================================
-# Build PCF Module Playbook
-# =============================================================================
-# Purpose: Orchestrate PCF module compilation and RPM generation
-# Hosts:   buildserver group
-# Params:  branch, build_no, module_ver, environment (via -e or Jenkins)
+# Build PCF Module Playbook (FIXED - No Recursion)
 # =============================================================================
 
 - name: "Build PCF Module Pipeline"
@@ -14,11 +10,11 @@
   
   vars:
     # =========================================================================
-    # BUILD PARAMETERS (Override via -e "branch=X build_no=Y module_ver=Z")
+    # BUILD PARAMETERS - Use simple defaults, NO Jinja2 templating
     # =========================================================================
-    build_pcf_branch: "{{ branch | default('UNDEFINED') }}"
-    build_pcf_build_no: "{{ build_no | default('UNDEFINED') }}"
-    build_pcf_module_ver: "{{ module_ver | default('UNDEFINED') }}"
+    build_pcf_branch: "{{ branch }}"           # Passed via -e branch=X
+    build_pcf_build_no: "{{ build_no }}"       # Passed via -e build_no=X
+    build_pcf_module_ver: "{{ module_ver }}"   # Passed via -e module_ver=X
     build_pcf_environment: "{{ environment | default('production') }}"
     
     # =========================================================================
@@ -37,21 +33,24 @@
         - name: "Validate required parameters are set"
           assert:
             that:
-              - build_pcf_branch != 'UNDEFINED'
-              - build_pcf_build_no != 'UNDEFINED'
-              - build_pcf_module_ver != 'UNDEFINED'
+              - build_pcf_branch is defined and build_pcf_branch | length > 0
+              - build_pcf_build_no is defined and build_pcf_build_no | string | length > 0
+              - build_pcf_module_ver is defined and build_pcf_module_ver | length > 0
             fail_msg: |
               ❌ MISSING REQUIRED PARAMETERS
               
-              Usage: ansible-playbook build_pcf.yml -e "branch=X build_no=Y module_ver=Z"
+              Usage: ansible-playbook build_pcf.yml \
+                -e "branch=X build_no=Y module_ver=Z"
               
               Example:
-                -e "branch=10.2.1.0_orion_int build_no=24800 module_ver=4.3.4.193953"
+                -e "branch=10.2.1.0_orion_int" \
+                -e "build_no=24800" \
+                -e "module_ver=4.3.4.193953"
                 
               Current values:
-                branch:     {{ build_pcf_branch }}
-                build_no:   {{ build_pcf_build_no }}
-                module_ver: {{ build_pcf_module_ver }}
+                branch:     {{ build_pcf_branch | default('NOT_PROVIDED') }}
+                build_no:   {{ build_pcf_build_no | default('NOT_PROVIDED') }}
+                module_ver: {{ build_pcf_module_ver | default('NOT_PROVIDED') }}
             success_msg: "✅ All required parameters provided"
           tags: [validate, always]
 
