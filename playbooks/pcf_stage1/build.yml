@@ -21,6 +21,10 @@
     pcf_build_no: "{{ build_no }}"
     pcf_module_ver: "{{ module_ver }}"
     
+    # Source code paths (SVN repos)
+    svn_base: "/var/lib/jenkins/SVN_repos"
+    pcf_source: "/var/lib/jenkins/SVN_repos/{{ pcf_branch }}"
+    
     # Computed paths (based on above)
     build_root: "/tmp/pcf_build_{{ pcf_build_no }}"
     releases_dir: "/root/releases"
@@ -75,6 +79,7 @@
           Build Number    : {{ pcf_build_no }}
           Module Version  : {{ pcf_module_ver }}
           
+          Source Code     : {{ pcf_source }}
           Build Root      : {{ build_root }}
           Releases Dir    : {{ releases_dir }}
           Log File        : {{ log_file }}
@@ -171,20 +176,34 @@
       tags: [prepare]
 
     # =========================================================================
-    # STEP 5: Copy Source Code
+    # STEP 5: Verify and Copy Source Code
     # =========================================================================
-    - name: "Step 5️⃣ - Copy Source Code to Build Directory"
+    - name: "Step 5️⃣ - Verify and Copy Source Code"
       block:
         - name: "Verify SVN source exists"
           stat:
-            path: /opt/pcf
+            path: "{{ pcf_source }}"
           register: svn_check
           failed_when: not svn_check.stat.exists
 
-        - name: "Copy SVN repository to build directory"
+        - name: "Verify bambooBuildRpms script exists"
+          stat:
+            path: "{{ pcf_source }}/icu/buildtools/bambooBuildRpms"
+          register: build_script_check
+          failed_when: not build_script_check.stat.exists
+
+        - name: "Display source verification"
+          debug:
+            msg: |
+              ✅ Source code verified:
+              - Path: {{ pcf_source }}
+              - Build Script: {{ pcf_source }}/icu/buildtools/bambooBuildRpms
+              - Exists: YES
+
+        - name: "Copy SVN source to build directory"
           shell: |
-            cp -r /opt/pcf/* {{ build_root }}/
-            echo "Source code copied"
+            cp -r {{ pcf_source }}/* {{ build_root }}/
+            echo "Source code copied successfully"
           register: copy_result
           changed_when: true
 
@@ -195,12 +214,13 @@
           register: source_files
           failed_when: source_files.matched == 0
 
-        - name: "Display source code status"
+        - name: "Display source copy status"
           debug:
             msg: |
               ✅ Source code copied:
+              - Source: {{ pcf_source }}
+              - Destination: {{ build_root }}
               - Files: {{ source_files.matched }}
-              - Build Root: {{ build_root }}
 
       tags: [prepare]
 
@@ -227,10 +247,10 @@
             
             # Execute build in chroot
             sudo chroot /sandbox/rhel810 \
-              /opt/pcf/icu/buildtools/bambooBuildRpms \
+              {{ pcf_source }}/icu/buildtools/bambooBuildRpms \
               -u bambooagent \
               -r "{{ pcf_build_no }}" \
-              -d "/opt/pcf" \
+              -d "{{ pcf_source }}" \
               -P pcf \
               -v "{{ pcf_module_ver }}" \
               -t "https://scm.forge.avaya.com/svnroot/aurora/branches/{{ pcf_branch }}" \
@@ -266,9 +286,6 @@
               
               See log file for details:
               {{ log_file }}
-              
-              Last 20 lines:
-              {{ build_output.stderr_lines[-20:] | default([]) | join('\n') }}
           
         - name: "Fail the play"
           fail:
@@ -287,6 +304,7 @@
               - "{{ build_root }}"
               - "{{ releases_dir }}"
               - "/tmp"
+              - "/root"
             patterns: "pcf-*.rpm"
             recurse: yes
           register: found_rpms
@@ -302,6 +320,7 @@
               - {{ build_root }}
               - {{ releases_dir }}
               - /tmp
+              - /root
               
               Check {{ log_file }} for build errors
             success_msg: "✅ Found {{ found_rpms.matched }} RPM file(s)"
