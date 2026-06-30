@@ -1,0 +1,70 @@
+---
+# =============================================================
+# Sub-Task: Update PCF modules for single version
+# Called by: update_pcf.yml (loop per version dir)
+# Variable from parent: pcf_dir_item
+# =============================================================
+
+- name: "Determine version from directory name"
+  set_fact:
+    current_pcf_version: "{{ pcf_dir_item.path | basename }}"
+
+- name: "Search for PCF RPMs in Avaya repos"
+  find:
+    paths: "{{ pcf_dir_item.path }}/{{ pcf_avaya_stream }}"
+    patterns: "{{ pcf_rpm_prefix }}-*.rpm"
+    file_type: file
+    recurse: yes
+  register: avaya_pcf_rpms
+  ignore_errors: yes
+
+- name: "Display discovery result for {{ current_pcf_version }}"
+  debug:
+    msg: |
+      ? PCF for {{ current_pcf_version }}:
+      +- Found    : {{ avaya_pcf_rpms.matched }}
+      +- Location : {{ pcf_dir_item.path }}/{{ pcf_avaya_stream }}
+  when: avaya_pcf_rpms.matched > 0
+
+- name: "Process discovered PCF RPMs"
+  block:
+    - name: "Copy PCF RPMs to SSP newRPMs structure"
+      shell: |
+        set -euo pipefail
+
+        SRC_DIR="{{ pcf_dir_item.path }}/{{ pcf_avaya_stream }}"
+        DST_DIR="{{ ssp_path }}/{{ ssp_new_rpms_dir }}/{{ current_pcf_version }}"
+        ARCH_DIR="{{ repo_pcf_archive_path }}/{{ current_pcf_version }}"
+
+        echo "Copying PCF RPMs for {{ current_pcf_version }}..."
+
+        mkdir -p "$DST_DIR" "$ARCH_DIR"
+
+        COUNT=0
+        while IFS= read -r rpm_file; do
+          [ -f "$rpm_file" ] || continue
+          
+          RPM_NAME=$(basename "$rpm_file")
+          
+          cp -f "$rpm_file" "$DST_DIR/$RPM_NAME"
+          cp -f "$rpm_file" "$ARCH_DIR/$RPM_NAME" 2>/dev/null || true
+          
+          COUNT=$((COUNT + 1))
+          echo "     Copied: $RPM_NAME"
+        done < <(find "$SRC_DIR" -name "{{ pcf_rpm_prefix }}-*.rpm" -type f)
+
+        echo "? Total PCF RPMs copied for {{ current_pcf_version }}: $COUNT"
+      args:
+        executable: /bin/bash
+      register: pcf_copy_result
+      changed_when: avaya_pcf_rpms.matched > 0
+
+    - debug:
+        msg: "{{ pcf_copy_result.stdout_lines }}"
+
+  when: avaya_pcf_rpms.matched > 0
+
+- name: "No PCF RPMs found for {{ current_pcf_version }}"
+  debug:
+    msg: "?  No PCF modules found under {{ pcf_dir_item.path }}/{{ pcf_avaya_stream }}"
+  when: avaya_pcf_rpms.matched == 0

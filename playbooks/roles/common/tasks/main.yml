@@ -1,0 +1,316 @@
+---
+# =============================================================
+# Common Role -- Shared Utilities for All Roles
+# Provides: logging, system validation, directory mgmt, services
+# Used by: all other roles in the pipeline
+# =============================================================
+
+- name: "[COMMON] Common role initialization"
+  debug:
+    msg: |
+      ? Common Role Loaded
+      +- Purpose : Shared utilities & validation
+      +- Target  : {{ inventory_hostname }}
+      +- Time    : {{ ansible_date_time.iso8601 }}
+  tags:
+    - common
+    - always
+
+---
+
+- name: "[COMMON] Initialize logging infrastructure"
+  block:
+    - name: "Ensure log directory exists"
+      file:
+        path: "{{ log_dir }}"
+        state: directory
+        mode: '0755'
+        recurse: yes
+
+    - name: "Create pipeline log file"
+      copy:
+        content: |
+          ============================================================
+          AVAYA SSP PIPELINE LOG
+          ============================================================
+          Started: {{ ansible_date_time.iso8601 }}
+          Host   : {{ inventory_hostname }}
+          User   : {{ ansible_user_id }}
+          Python : {{ ansible_python_version }}
+          
+          ============================================================
+          EXECUTION LOG
+          ============================================================
+        dest: "{{ log_dir }}/pipeline_{{ ansible_date_time.date }}.log"
+        mode: '0644'
+        force: no
+
+    - name: "Log role initialization"
+      lineinfile:
+        path: "{{ log_dir }}/pipeline_{{ ansible_date_time.date }}.log"
+        line: "[COMMON][INIT] Common role loaded at {{ ansible_date_time.iso8601 }}"
+        insertafter: "EXECUTION LOG"
+
+  tags:
+    - common
+    - common_logging
+
+---
+
+- name: "[COMMON] Gather system facts and baseline"
+  block:
+    - name: "Capture system baseline"
+      set_fact:
+        system_baseline: |
+          Hostname      : {{ inventory_hostname }}
+          OS            : {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Kernel        : {{ ansible_kernel }}
+          CPU Cores     : {{ ansible_processor_vcpus }}
+          Memory (MB)   : {{ (ansible_memtotal_mb | int) }}
+          Disk Root (GB): {{ (ansible_mounts | selectattr('mount', 'equalto', '/') | map(attribute='size_total') | first | int / 1024 / 1024 / 1024) | round(2) }}
+          Uptime (sec)  : {{ ansible_uptime_seconds | int }}
+
+    - name: "Display system baseline"
+      debug:
+        msg: |
+          ? System Baseline:
+          {{ system_baseline }}
+
+    - name: "Store baseline for later use"
+      set_fact:
+        cacheable: yes
+        common_system_baseline: "{{ system_baseline }}"
+
+  tags:
+    - common
+    - common_facts
+
+---
+
+- name: "[COMMON] Validate system prerequisites"
+  block:
+    - name: "Check minimum disk space (/opt)"
+      shell: |
+        AVAIL=$(df -BG /opt 2>/dev/null | awk 'NR==2 {print $4}' | tr -d 'G')
+        echo "$AVAIL"
+      args:
+        executable: /bin/bash
+      register: disk_opt_avail
+      changed_when: false
+
+    - name: "Check minimum disk space (/)"
+      shell: |
+        AVAIL=$(df -BG / 2>/dev/null | awk 'NR==2 {print $4}' | tr -d 'G')
+        echo "$AVAIL"
+      args:
+        executable: /bin/bash
+      register: disk_root_avail
+      changed_when: false
+
+    - name: "Check available memory"
+      shell: |
+        free -m | awk 'NR==2 {print $7}'
+      args:
+        executable: /bin/bash
+      register: mem_avail
+      changed_when: false
+
+    - name: "Validate system resources"
+      assert:
+        that:
+          - disk_opt_avail.stdout | int >= 2
+          - disk_root_avail.stdout | int >= 1
+          - mem_avail.stdout | int >= 512
+        fail_msg: |
+          ? SYSTEM RESOURCES INSUFFICIENT
+          /opt Free     : {{ disk_opt_avail.stdout | int }}GB (minimum: 2GB)
+          / Free        : {{ disk_root_avail.stdout | int }}GB (minimum: 1GB)
+          Memory Free   : {{ mem_avail.stdout | int }}MB (minimum: 512MB)
+        success_msg: |
+          ? System resources adequate
+          /opt Free     : {{ disk_opt_avail.stdout | int }}GB
+          / Free        : {{ disk_root_avail.stdout | int }}GB
+          Memory Free   : {{ mem_avail.stdout | int }}MB
+
+  rescue:
+    - fail:
+        msg: "System prerequisite validation failed -- insufficient resources"
+
+  tags:
+    - common
+    - common_validate
+
+---
+
+- name: "[COMMON] Validate required commands"
+  block:
+    - name: "Define required commands"
+      set_fact:
+        required_commands:
+          - ansible
+          - python3
+          - curl
+          - wget
+          - rsync
+          - tar
+          - gzip
+          - md5sum
+          - rpm
+          - dnf
+          - systemctl
+
+    - name: "Check each required command"
+      shell: "which {{ item }}"
+      loop: "{{ required_commands }}"
+      register: cmd_check
+      changed_when: false
+      failed_when: false
+
+    - name: "Report missing commands"
+      fail:
+        msg: |
+          ? MISSING REQUIRED COMMAND: {{ item.item }}
+          Please install this command and retry.
+      when: item.rc != 0
+      loop: "{{ cmd_check.results }}"
+      any_errors_fatal: false
+
+    - name: "Display available commands"
+      debug:
+        msg: |
+          ? All required commands available:
+          {{ cmd_check.results | selectattr('rc', 'equalto', 0) | map(attribute='item') | list | join(', ') }}
+
+  tags:
+    - common
+    - common_commands
+
+---
+
+- name: "[COMMON] Initialize standard directories"
+  block:
+    - name: "Create standard directories"
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+        recurse: yes
+      loop:
+        - "{{ log_dir }}"
+        - "/tmp/avaya_artifacts"
+        - "/var/cache/avaya_pipeline"
+        - "/opt/ssp_work"
+
+    - name: "Set directory ownership (if needed)"
+      file:
+        path: "{{ item }}"
+        owner: root
+        group: root
+      loop:
+        - "{{ log_dir }}"
+      ignore_errors: yes
+
+  tags:
+    - common
+    - common_dirs
+
+---
+
+- name: "[COMMON] Configure Ansible environment"
+  block:
+    - name: "Set Ansible fact cache directory"
+      set_fact:
+        cacheable: yes
+        ansible_facts_cache_dir: "/tmp/ansible_facts_cache"
+
+    - name: "Create fact cache directory"
+      file:
+        path: "/tmp/ansible_facts_cache"
+        state: directory
+        mode: '0755'
+
+    - name: "Display Ansible configuration"
+      debug:
+        msg: |
+          ?  Ansible Configuration:
+          +- Version      : {{ ansible_version.full }}
+          +- Inventory    : {{ inventory_hostname }}
+          +- Become       : {{ ansible_become | default(false) }}
+          +- Timeout      : {{ ansible_timeout | default(10) }}s
+
+  tags:
+    - common
+    - common_ansible
+
+---
+
+- name: "[COMMON] Setup service management helpers"
+  block:
+    - name: "Verify systemctl is available"
+      command: which systemctl
+      register: systemctl_check
+      changed_when: false
+
+    - name: "Create systemctl wrapper script (optional)"
+      copy:
+        content: |
+          #!/bin/bash
+          # Systemctl wrapper for Avaya pipeline
+          # Logs all service operations
+          
+          LOG_FILE="{{ log_dir }}/service_ops_{{ ansible_date_time.date }}.log"
+          
+          {
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] $@"
+            /bin/systemctl "$@"
+          } >> "$LOG_FILE" 2>&1
+          
+          exit ${PIPESTATUS[1]}
+        dest: "/usr/local/bin/avaya-systemctl"
+        mode: '0755'
+      ignore_errors: yes
+
+  tags:
+    - common
+    - common_services
+
+---
+
+- name: "[COMMON] Validate network connectivity"
+  block:
+    - name: "Check network availability"
+      uri:
+        url: "http://www.google.com"
+        method: HEAD
+        status_code: 200,301,302
+        timeout: 5
+      register: network_check
+      failed_when: false
+
+    - name: "Display network status"
+      debug:
+        msg: |
+          ? Network Status:
+          +- DNS Resolution: {{ 'OK' if network_check.rc == 0 else 'FAILED' }}
+          +- HTTP Access   : {{ 'OK' if network_check.rc == 0 else 'FAILED' }}
+          +- Status        : {{ 'Connected' if network_check.rc == 0 else 'Offline (may be OK)' }}
+
+  rescue:
+    - debug:
+        msg: "?  Network connectivity check skipped (non-critical)"
+
+  tags:
+    - common
+    - common_network
+
+---
+
+- name: "[COMMON] Log common role completion"
+  lineinfile:
+    path: "{{ log_dir }}/pipeline_{{ ansible_date_time.date }}.log"
+    line: "[COMMON][READY] Common role initialization complete -- {{ ansible_date_time.iso8601 }}"
+    insertafter: EOF
+  ignore_errors: yes
+  tags:
+    - common
+    - always

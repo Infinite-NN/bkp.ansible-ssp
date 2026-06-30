@@ -1,0 +1,146 @@
+---
+# =============================================================
+# Common Role -- Shared Variables
+# Used by: all roles in the pipeline
+# =============================================================
+
+# ---------------------------------------------------------
+# Logging Configuration
+# ---------------------------------------------------------
+
+log_dir: "/var/log/avaya_pipeline"
+log_retention_days: 90
+log_max_size_mb: 100
+
+# ---------------------------------------------------------
+# System Resource Validation
+# ---------------------------------------------------------
+
+# Minimum required disk space (GB)
+min_disk_free_opt: 2
+min_disk_free_root: 1
+
+# Minimum required memory (MB)
+min_memory_required: 512
+
+# ---------------------------------------------------------
+# Standard Directories
+# ---------------------------------------------------------
+
+# Artifact collection
+artifact_base_dir: "/tmp/avaya_artifacts"
+artifact_retention_days: 30
+
+# Cache directory
+cache_dir: "/var/cache/avaya_pipeline"
+
+# Temp workspace
+temp_workspace_base: "/tmp"
+
+# ---------------------------------------------------------
+# Command Paths
+# ---------------------------------------------------------
+
+cmd_ansible: "/usr/bin/ansible"
+cmd_python3: "/usr/bin/python3"
+cmd_curl: "/usr/bin/curl"
+cmd_wget: "/usr/bin/wget"
+cmd_rsync: "/usr/bin/rsync"
+cmd_tar: "/usr/bin/tar"
+cmd_gzip: "/usr/bin/gzip"
+cmd_rpm: "/usr/bin/rpm"
+cmd_dnf: "/usr/bin/dnf"
+cmd_systemctl: "/usr/bin/systemctl"
+
+# ---------------------------------------------------------
+# Network Configuration
+# ---------------------------------------------------------
+
+# DNS servers (fallback)
+dns_servers:
+  - 8.8.8.8
+  - 8.8.4.4
+
+# Network timeout (seconds)
+network_timeout: 30
+
+# DNS resolution timeout
+dns_timeout: 10
+
+# ---------------------------------------------------------
+# Ansible Configuration
+# ---------------------------------------------------------
+
+# Default SSH timeout
+ansible_timeout: 300
+
+# Connection timeout
+ansible_connection_timeout: 30
+
+# Become method
+ansible_become_method: sudo
+
+# Gather facts timeout
+gather_timeout: 60
+
+# ---------------------------------------------------------
+# Retry Configuration
+# ---------------------------------------------------------
+
+default_max_retries: 3
+default_retry_delay: 10
+
+# ---------------------------------------------------------
+# Service Management
+# ---------------------------------------------------------
+
+# Timeout for service operations (seconds)
+service_operation_timeout: 300
+
+# Services to verify are running
+critical_services: []
+
+# ---------------------------------------------------------
+# Notification Settings
+# ---------------------------------------------------------
+
+# Enable email notifications
+enable_email_notifications: false
+
+# Email recipients
+email_recipients: []
+
+# ---------------------------------------------------------
+# Debug & Diagnostic Settings
+# ---------------------------------------------------------
+
+# Verbose logging
+verbose_logging: false
+
+# Debug mode
+debug_mode: false
+
+# Keep diagnostics on failure
+keep_diagnostics_on_failure: true
+
+# ---------------------------------------------------------
+# Feature Flags
+# ---------------------------------------------------------
+
+# Enable comprehensive logging
+enable_comprehensive_logging: true
+
+# Enable health checks
+enable_health_checks: true
+
+# Enable artifact collection
+enable_artifact_collection: true
+
+# ---------------------------------------------------------
+# Message Templates
+# ---------------------------------------------------------
+
+message_success: "? Operation completed successfully"
+message_failure: "? Operation failed"
+message_warning: "?  Warning"
+message_info: "i  Information"

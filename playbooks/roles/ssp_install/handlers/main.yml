@@ -1,0 +1,413 @@
+---
+# =============================================================
+# SSP Install Role -- Handlers
+# Handlers run once at end of play after notify
+# Keep handlers simple and idempotent
+# =============================================================
+
+# ---------------------------------------------------------
+# Cleanup Handlers
+# ---------------------------------------------------------
+- name: cleanup ssp work directory
+  block:
+    - name: "Remove SSP work directory"
+      file:
+        path: "{{ ssp_work_dir }}"
+        state: absent
+
+    - name: "Log work directory cleanup"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: "[CLEANUP][WORK_DIR] Removed {{ ssp_work_dir }} -- {{ ansible_date_time.iso8601 }}"
+        create: yes
+      ignore_errors: yes
+
+  rescue:
+    - debug:
+        msg: "?  Could not cleanup work directory (non-critical)"
+
+  notify: "cleanup ssp work dir"
+  when: enable_cleanup_work_dir | default(true) | bool
+  tags:
+    - cleanup
+
+- name: recreate ssp work directory
+  file:
+    path: "{{ ssp_work_dir }}"
+    state: directory
+    mode: '0755'
+  notify: "cleanup ssp work dir"
+  when: not (cleanup_on_failure | default(false)) | bool
+  tags:
+    - cleanup
+
+- name: cleanup extracted ssp archive
+  block:
+    - name: "Find extracted directories"
+      find:
+        paths: "{{ ssp_work_dir }}"
+        patterns: "*"
+        file_type: directory
+        depth: 1
+      register: extracted_dirs
+
+    - name: "Remove extracted directories"
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ extracted_dirs.files | default([]) }}"
+      ignore_errors: yes
+
+  notify: "cleanup extracted ssp"
+  when: enable_cleanup_work_dir | default(true) | bool
+  tags:
+    - cleanup
+
+
+- name: remove downloaded tar file
+  block:
+    - name: "Find and remove TAR files"
+      find:
+        paths: "{{ ssp_work_dir }}"
+        patterns: "*.tar"
+        file_type: file
+      register: tar_files
+
+    - name: "Delete TAR files"
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ tar_files.files | default([]) }}"
+      ignore_errors: yes
+
+  notify: "remove downloaded tar"
+  when: enable_cleanup_work_dir | default(true) | bool
+  tags:
+    - cleanup
+
+
+# ---------------------------------------------------------
+# IPCS Service Control Handlers
+# ---------------------------------------------------------
+
+- name: stop ipcs service
+  block:
+    - name: "Stop IPCS"
+      shell: |
+        set -euo pipefail
+        
+        if [ -x "{{ ipcs_script }}" ]; then
+          echo "Stopping IPCS..."
+          "{{ ipcs_script }}" stop 2>&1 || true
+          sleep 5
+        fi
+        
+        # Kill any remaining Java/IPCS processes
+        pkill -f "java.*IPCS" || true
+        pkill -f "ipcs" || true
+        
+        echo "? IPCS stop complete"
+      args:
+        executable: /bin/bash
+      changed_when: true
+      ignore_errors: yes
+
+  notify: "stop ipcs"
+  tags:
+    - ipcs
+
+- name: start ipcs service
+  block:
+    - name: "Start IPCS"
+      shell: |
+        set -euo pipefail
+        
+        echo "Starting IPCS..."
+        "{{ ipcs_script }}" start 2>&1 || true
+        
+        sleep 10
+        
+        echo "? IPCS start initiated"
+      args:
+        executable: /bin/bash
+      changed_when: true
+      ignore_errors: yes
+
+  notify: "start ipcs"
+  tags:
+    - ipcs
+
+
+- name: restart ipcs service
+  block:
+    - name: "Restart IPCS"
+      shell: |
+        set -euo pipefail
+        
+        echo "Restarting IPCS..."
+        "{{ ipcs_script }}" stop 2>&1 || true
+        sleep 10
+        "{{ ipcs_script }}" start 2>&1 || true
+        
+        echo "? IPCS restart initiated"
+      args:
+        executable: /bin/bash
+      changed_when: true
+      ignore_errors: yes
+
+  notify: "restart ipcs"
+  tags:
+    - ipcs
+
+
+- name: wait for gui service after ipcs action
+  block:
+    - name: "Poll for GUI UP status"
+      shell: |
+        "{{ ipcs_script }}" status 2>/dev/null | grep -iE "{{ gui_check_pattern }}"
+      register: gui_status
+      retries: "{{ retry_count_gui_check | default(60) }}"
+      delay: "{{ retry_delay_gui | default(10) }}"
+      until: gui_status.rc == 0
+      failed_when: false
+      changed_when: false
+
+    - name: "Log GUI status"
+      debug:
+        msg: "{{ 'GUI UP' if gui_status.rc == 0 else 'GUI still starting...' }}"
+
+  notify: "wait for gui up"
+  tags:
+    - ipcs
+
+
+# ---------------------------------------------------------
+# Lock File Cleanup
+# ---------------------------------------------------------
+
+- name: clear lock files
+  block:
+    - name: "Remove lock files from system paths"
+      shell: |
+        set -euo pipefail
+        
+        for dir in {{ lock_file_paths | join(' ') }}; do
+          find "$dir" -maxdepth 1 -name "*.lock" -delete 2>/dev/null || true
+        done
+        
+        echo "? Lock files cleared"
+      args:
+        executable: /bin/bash
+      changed_when: true
+      ignore_errors: yes
+
+  notify: "clear lock files"
+  tags:
+    - cleanup
+
+
+# ---------------------------------------------------------
+# Log Rotation Handler
+# ---------------------------------------------------------
+
+- name: rotate ssp installation log
+  block:
+    - name: "Check log size and rotate if needed"
+      shell: |
+        set -euo pipefail
+        
+        LOG="{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        MAX_LINES=10000
+        
+        if [ ! -f "$LOG" ]; then
+          exit 0
+        fi
+        
+        LINES=$(wc -l < "$LOG")
+        
+        if [ "$LINES" -gt "$MAX_LINES" ]; then
+          ARCHIVE="${LOG}.$(date +%H%M%S).bak"
+          echo "Rotating log (${LINES} lines) -> ${ARCHIVE}"
+          mv "$LOG" "$ARCHIVE"
+          gzip -f "$ARCHIVE" 2>/dev/null &
+          echo "? Log rotated"
+        else
+          echo "Log size OK: ${LINES} lines"
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: true
+      ignore_errors: yes
+
+  notify: "rotate pipeline log"
+  tags:
+    - logging
+
+
+
+# ---------------------------------------------------------
+# Artifact Collection Handlers
+# ---------------------------------------------------------
+
+- name: collect ssp install artifacts
+  block:
+    - name: "Create artifact destination directory"
+      file:
+        path: "{{ artifact_dest_base }}"
+        state: directory
+        mode: '0755'
+      ignore_errors: yes
+
+    - name: "Collect patch.log"
+      copy:
+        src: "{{ patch_log }}"
+        dest: "{{ artifact_dest_base }}/patch_{{ inventory_hostname }}_{{ ansible_date_time.date }}.log"
+        remote_src: yes
+      when: patch_log is defined
+      ignore_errors: yes
+
+    - name: "Collect SSP install log"
+      shell: |
+        cp "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log" \
+           "{{ artifact_dest_base }}/ssp_install_{{ inventory_hostname }}_{{ ansible_date_time.date }}.log" 2>/dev/null || true
+      args:
+        executable: /bin/bash
+      ignore_errors: yes
+      changed_when: true
+
+    - name: "List collected artifacts"
+      find:
+        paths: "{{ artifact_dest_base }}"
+        file_type: file
+      register: collected_artifacts
+      ignore_errors: yes
+
+    - name: "Display artifact collection summary"
+      debug:
+        msg: |
+          ? Artifacts collected ({{ collected_artifacts.matched }} files):
+          {{ collected_artifacts.files | map(attribute='path') | list | join('\n') }}
+
+  notify: "collect ssp artifacts"
+  tags:
+    - artifacts
+
+
+# ---------------------------------------------------------
+# Diagnostic Collection Handler
+# ---------------------------------------------------------
+
+- name: collect system diagnostics on failure
+  block:
+    - name: "Gather diagnostic information"
+      shell: |
+        set -euo pipefail
+        
+        echo "=== SYSTEM STATE AT FAILURE ==="
+        echo ""
+        echo "Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        echo "Hostname: $(hostname -f)"
+        echo ""
+        
+        echo "=== Uptime and Load ==="
+        uptime
+        echo ""
+        
+        echo "=== Disk Usage ==="
+        df -hT /opt /
+        echo ""
+        
+        echo "=== Memory Status ==="
+        free -m
+        echo ""
+        
+        echo "=== Top CPU Processes ==="
+        ps aux --sort=-%cpu | head -15
+        echo ""
+        
+        echo "=== IPCS Status ==="
+        "{{ ipcs_script }}" status 2>/dev/null || echo "IPCS not responding"
+        echo ""
+        
+        echo "=== Recent patch.log entries ==="
+        if [ -f "{{ patch_log }}" ]; then
+          tail -50 "{{ patch_log }}"
+        else
+          echo "patch.log not found"
+        fi
+        echo ""
+        
+        echo "=== SSP Work Directory Contents ==="
+        if [ -d "{{ ssp_work_dir }}" ]; then
+          ls -lhR "{{ ssp_work_dir }}" | head -100
+        else
+          echo "ssp_work_dir not found"
+        fi
+      args:
+        executable: /bin/bash
+      register: diagnostics
+      ignore_errors: yes
+      changed_when: false
+
+    - name: "Log diagnostic output"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: |
+          
+          [DIAGNOSTICS] Collected at {{ ansible_date_time.iso8601 }}
+          {{ diagnostics.stdout | indent(2) }}
+        create: yes
+      ignore_errors: yes
+
+    - name: "Display diagnostic output"
+      debug:
+        msg: "{{ diagnostics.stdout_lines | default([]) }}"
+
+  notify: "collect diagnostics"
+  tags:
+    - diagnostics
+
+
+# ---------------------------------------------------------
+# Summary Handler
+# ---------------------------------------------------------
+
+- name: write install summary
+  block:
+    - name: "Generate installation summary"
+      copy:
+        content: |
+          
+          ============================================================
+          SSP INSTALLATION SUMMARY
+          ============================================================
+          Host                : {{ inventory_hostname }}
+          Date                : {{ ansible_date_time.iso8601 }}
+          
+          Installation Details:
+            SSP Version       : {{ latest_version | default('UNKNOWN') }}
+            TAR File          : {{ latest_tar | default('UNKNOWN') }}
+            TGZ File          : {{ tgz_path | default('UNKNOWN') }}
+            Work Directory    : {{ ssp_work_dir }}
+            Install Directory : {{ ssp_install_dir }}
+          
+          Process Information:
+            patchSBC RC       : {{ patch_result.rc | default('UNKNOWN') }}
+            Boot Before       : {{ boot_before.stdout | default('UNKNOWN') }}
+            Boot After        : {{ boot_after.stdout | default('UNKNOWN') }}
+            Reboot Confirmed  : {{ (boot_before.stdout | default('')) != (boot_after.stdout | default('')) }}
+          
+          Artifact Locations:
+            Log Directory     : {{ log_dir }}
+            Patch Log         : {{ patch_log }}
+            Artifact Base     : {{ artifact_dest_base }}
+          
+          Installation completed: {{ ansible_date_time.iso8601 }}
+          ============================================================
+        dest: "{{ log_dir }}/ssp_install_summary_{{ ansible_date_time.date }}.txt"
+        mode: '0644'
+      ignore_errors: yes
+
+  notify: "write install summary"
+  tags:
+    - logging

@@ -1,0 +1,164 @@
+---
+# =============================================================
+# Post-Reboot -- Update PCF Modules
+# Fetches latest PCF RPMs for each version directory
+# Calls sub-task: update_pcf_version.yml
+# =============================================================
+
+- name: "[PCF] Initialize PCF update phase"
+  block:
+    - name: "Log PCF update start"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: "[PCF][START] {{ ansible_date_time.iso8601 }}"
+        create: yes
+
+    - name: "Display PCF configuration"
+      debug:
+        msg: |
+          ? PCF Module Update Configuration:
+          +- SSP Path       : {{ ssp_path }}
+          +- Search Pattern : 10.2.1.*
+          +- RPM Prefix     : {{ pcf_rpm_prefix }}
+          +- Archive Path   : {{ repo_pcf_archive_path }}
+
+  tags:
+    - pcf
+    - pcf_init
+
+---
+
+- name: "[PCF] Validate prerequisites"
+  block:
+    - name: "Verify ssp_path is defined"
+      assert:
+        that:
+          - ssp_path is defined
+          - ssp_path | length > 0
+        fail_msg: "ssp_path is not defined"
+        success_msg: "? ssp_path validated"
+
+    - name: "Verify SSP exists"
+      stat:
+        path: "{{ ssp_path }}"
+      register: ssp_stat
+      failed_when: not ssp_stat.stat.exists
+
+  rescue:
+    - fail:
+        msg: "PCF update prerequisite validation failed"
+
+  tags:
+    - pcf
+    - pcf_validate
+
+---
+
+- name: "[PCF] Discover PCF version directories"
+  block:
+    - name: "Find version directories matching 10.2.1.* pattern"
+      find:
+        paths: "{{ ssp_path }}/{{ ssp_new_rpms_dir }}"
+        patterns: "10.2.1.*"
+        file_type: directory
+        recurse: no
+      register: pcf_version_dirs
+
+    - name: "Display discovered directories"
+      debug:
+        msg: |
+          ? PCF Version Directories Found: {{ pcf_version_dirs.matched }}
+          {{ pcf_version_dirs.files | map(attribute='path') | map('basename') | list | join('\n') }}
+
+    - name: "Warn if none found"
+      debug:
+        msg: "?  No version directories found -- no PCF modules to update"
+      when: pcf_version_dirs.matched == 0
+
+  tags:
+    - pcf
+    - pcf_discover
+
+---
+
+- name: "[PCF] Ensure PCF archive directory exists"
+  file:
+    path: "{{ repo_pcf_archive_path }}"
+    state: directory
+    mode: '0755'
+    recurse: yes
+  when: pcf_version_dirs.matched > 0
+  tags:
+    - pcf
+    - pcf_dirs
+
+---
+
+- name: "[PCF] Process each PCF version"
+  block:
+    - name: "Include sub-task for each version directory"
+      include_tasks: update_pcf_version.yml
+      loop: "{{ pcf_version_dirs.files }}"
+      loop_control:
+        loop_var: pcf_dir_item
+        label: "{{ pcf_dir_item.path | basename }}"
+      when: pcf_version_dirs.matched > 0
+
+  rescue:
+    - name: "Log PCF processing failure"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: "[PCF][PROCESSING_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }}"
+        create: yes
+      ignore_errors: yes
+
+    - fail:
+        msg: "PCF module processing failed -- {{ ansible_failed_result.msg }}"
+
+  tags:
+    - pcf
+    - pcf_process
+
+---
+
+- name: "[PCF] Final verification"
+  block:
+    - name: "Find all PCF RPMs in SSP structure"
+      find:
+        paths: "{{ ssp_path }}/{{ ssp_new_rpms_dir }}"
+        patterns: "{{ pcf_rpm_prefix }}-*.rpm"
+        file_type: file
+        recurse: yes
+      register: final_pcf_rpms
+
+    - name: "Display final PCF RPM inventory"
+      debug:
+        msg: |
+          ? PCF MODULE UPDATE COMPLETE
+          
+          ? Final Inventory:
+          +- PCF RPMs Found: {{ final_pcf_rpms.matched }}
+          +- Modules:
+          {{ final_pcf_rpms.files | map(attribute='path') | map('basename') | list | join('\n') }}
+
+    - name: "Log completion"
+      lineinfile:
+        path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+        line: "[PCF][SUCCESS] {{ ansible_date_time.iso8601 }} -- {{ final_pcf_rpms.matched }} PCF module(s) in place"
+        create: yes
+
+  tags:
+    - pcf
+    - pcf_summary
+
+---
+
+- name: "[PCF] Phase completion"
+  lineinfile:
+    path: "{{ log_dir }}/ssp_install_{{ ansible_date_time.date }}.log"
+    line: "[PCF][END] {{ ansible_date_time.iso8601 }}"
+    create: yes
+  ignore_errors: yes
+  tags:
+    - pcf
+    - always

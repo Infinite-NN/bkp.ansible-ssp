@@ -1,0 +1,296 @@
+---
+# =============================================================
+# Post-Reboot Role -- Main Entry Point
+# Purpose: Orchestrate all post-reboot validation & updates
+# =============================================================
+
+- name: "[POST_REBOOT] Role initialization"
+  debug:
+    msg: |
+      ??????????????????????????????????????
+      ?   POST-REBOOT ROLE INITIALIZATION  ?
+      ??????????????????????????????????????
+      ? Host          : {{ inventory_hostname }}
+      ? Environment   : {{ post_reboot_environment | default('unknown') }}
+      ? Security Upd  : {{ post_reboot_run_security_updates | default(false) }}
+      ? PCF Update    : {{ post_reboot_run_pcf_update | default(false) }}
+      ? Boot Time     : {{ ansible_uptime_seconds | int }}s
+      ? Load Average  : {{ ansible_load.1 }}
+      ??????????????????????????????????????
+  tags:
+    - always
+
+- name: "[POST_REBOOT] Initialize logging"
+  block:
+    - name: "Create log directory"
+      file:
+        path: "{{ log_dir }}"
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: "Initialize post-reboot log"
+      copy:
+        content: |
+          ============================================================
+          POST-REBOOT VALIDATION LOG
+          ============================================================
+          Start Time      : {{ ansible_date_time.iso8601 }}
+          Host            : {{ inventory_hostname }}
+          Environment     : {{ post_reboot_environment }}
+          Boot Uptime     : {{ ansible_uptime_seconds | int }}s
+          
+          ============================================================
+          Post-Reboot Tasks:
+          ============================================================
+        dest: "{{ log_dir }}/post_reboot_{{ ansible_date_time.date }}.log"
+        mode: '0644'
+
+    - name: "Store log path for later use"
+      set_fact:
+        post_reboot_log: "{{ log_dir }}/post_reboot_{{ ansible_date_time.date }}.log"
+
+  tags:
+    - always
+
+- name: "[POST_REBOOT] System validation"
+  block:
+    - name: "Verify system is fully booted"
+      wait_for_connection:
+        delay: 10
+        timeout: 300
+
+    - name: "Ping system"
+      ping:
+
+    - name: "Gather full facts"
+      setup:
+        gather_timeout: 60
+
+    - name: "Check system load"
+      shell: |
+        echo "Load Average: $(cat /proc/loadavg)"
+        echo "Uptime: $(uptime)"
+        echo "Memory: $(free -h | grep Mem)"
+      register: system_status
+      changed_when: false
+
+    - name: "Display system status"
+      debug:
+        msg: "{{ system_status.stdout }}"
+
+    - name: "Log system validation success"
+      lineinfile:
+        path: "{{ post_reboot_log }}"
+        line: "[SYSTEM] ? System validation passed -- {{ ansible_date_time.iso8601 }}"
+        insertafter: "Post-Reboot Tasks:"
+
+  rescue:
+    - name: "? System validation failed"
+      fail:
+        msg: "System did not come up properly after reboot"
+
+  tags:
+    - post_reboot
+    - system_check
+
+- name: "[POST_REBOOT] Include IPCS verification tasks"
+  include_tasks: ipcs.yml
+  vars:
+    log_file: "{{ post_reboot_log }}"
+  tags:
+    - post_reboot
+    - ipcs
+
+- name: "[POST_REBOOT] Include SSP move tasks"
+  include_tasks: ssp_move.yml
+  vars:
+    log_file: "{{ post_reboot_log }}"
+  tags:
+    - post_reboot
+    - ssp_move
+
+- name: "[POST_REBOOT] Discover ssp_path"
+  block:
+    - name: "Find SSP installation path"
+      shell: |
+        set -euo pipefail
+        # Try multiple methods to discover ssp_path
+        
+        # Method 1: Look for InstallRPMsList
+        if [ -f /opt/ssp/InstallRPMsList ]; then
+          dirname /opt/ssp/InstallRPMsList
+          exit 0
+        fi
+        
+        # Method 2: Look under /opt/ssp/*
+        FOUND=$(find /opt/ssp -name InstallRPMsList 2>/dev/null | head -1)
+        if [ -n "$FOUND" ]; then
+          dirname "$FOUND"
+          exit 0
+        fi
+        
+        # Method 3: Use default
+        if [ -d /opt/ssp ]; then
+          echo "/opt/ssp"
+          exit 0
+        fi
+        
+        echo "ERROR: Cannot find ssp_path" >&2
+        exit 1
+      args:
+        executable: /bin/bash
+      register: ssp_path_result
+      changed_when: false
+      failed_when: ssp_path_result.rc != 0
+
+    - name: "Set ssp_path fact"
+      set_fact:
+        ssp_path: "{{ ssp_path_result.stdout_lines[0] | trim }}"
+      failed_when: ssp_path_result.stdout_lines | length == 0
+
+    - name: "Verify ssp_path exists"
+      stat:
+        path: "{{ ssp_path }}"
+      register: ssp_path_stat
+      failed_when: not ssp_path_stat.exists
+
+    - name: "Log ssp_path discovery"
+      lineinfile:
+        path: "{{ post_reboot_log }}"
+        line: "[SSP_PATH] ? Discovered: {{ ssp_path }} -- {{ ansible_date_time.iso8601 }}"
+        insertafter: EOF
+
+    - name: "Display ssp_path"
+      debug:
+        msg: "SSP Path: {{ ssp_path }}"
+
+  rescue:
+    - name: "? ssp_path discovery failed"
+      lineinfile:
+        path: "{{ post_reboot_log }}"
+        line: "[SSP_PATH] ? FAILED -- {{ ansible_date_time.iso8601 }}"
+        insertafter: EOF
+
+    - name: "Fail with error"
+      fail:
+        msg: "Cannot determine ssp_path -- SSP installation may be incomplete"
+
+  tags:
+    - post_reboot
+    - ssp_path
+
+- name: "[POST_REBOOT] Include download security RPM tasks"
+  include_tasks: download_security_rpms.yml
+  vars:
+    log_file: "{{ post_reboot_log }}"
+  when: post_reboot_run_security_updates | default(false) | bool
+  tags:
+    - post_reboot
+    - security_updates
+
+- name: "[POST_REBOOT] Include download additional RPM tasks"
+  include_tasks: download_additional_rpms.yml
+  vars:
+    log_file: "{{ post_reboot_log }}"
+  tags:
+    - post_reboot
+    - additional_rpms
+
+- name: "[POST_REBOOT] Include RPM update tasks"
+  include_tasks: update_rpms.yml
+  vars:
+    log_file: "{{ post_reboot_log }}"
+    ssp_install_path: "{{ ssp_path }}"
+  tags:
+    - post_reboot
+    - update_rpms
+
+- name: "[POST_REBOOT] Include SBC details update tasks"
+  include_tasks: update_sbc_details.yml
+  vars:
+    log_file: "{{ post_reboot_log }}"
+  tags:
+    - post_reboot
+    - sbc_details
+
+- name: "[POST_REBOOT] Include SBC release update tasks"
+  include_tasks: update_sbc_release.yml
+  vars:
+    log_file: "{{ post_reboot_log }}"
+  tags:
+    - post_reboot
+    - sbc_release
+
+- name: "[POST_REBOOT] Include PCF update tasks"
+  include_tasks: update_pcf.yml
+  vars:
+    log_file: "{{ post_reboot_log }}"
+  when: post_reboot_run_pcf_update | default(false) | bool
+  tags:
+    - post_reboot
+    - pcf_update
+
+- name: "[POST_REBOOT] Include SSP repackage tasks"
+  include_tasks: repackage_ssp.yml
+  vars:
+    log_file: "{{ post_reboot_log }}"
+    ssp_install_path: "{{ ssp_path }}"
+  tags:
+    - post_reboot
+    - repackage
+
+- name: "[POST_REBOOT] Include HTML report generation tasks"
+  include_tasks: generate_html_report.yml
+  vars:
+    log_file: "{{ post_reboot_log }}"
+  tags:
+    - post_reboot
+    - reporting
+
+- name: "[POST_REBOOT] Post-phase verification"
+  block:
+    - name: "Collect final statistics"
+      shell: |
+        echo "=== Final System Status ==="
+        echo "Uptime: $(uptime)"
+        echo "Disk Usage: $(df -h / | tail -1)"
+        echo "Memory: $(free -h | grep Mem)"
+        echo ""
+        echo "=== Service Status ==="
+        systemctl status ssp 2>/dev/null || echo "SSP service status unavailable"
+        systemctl status pcf 2>/dev/null || echo "PCF service status unavailable"
+      register: final_stats
+      changed_when: false
+      failed_when: false
+
+    - name: "Display final statistics"
+      debug:
+        msg: "{{ final_stats.stdout }}"
+
+    - name: "Log post-reboot completion"
+      lineinfile:
+        path: "{{ post_reboot_log }}"
+        line: "[COMPLETE] ? POST-REBOOT PHASE COMPLETE -- {{ ansible_date_time.iso8601 }}"
+        insertafter: EOF
+
+  rescue:
+    - name: "?  Final verification warning"
+      lineinfile:
+        path: "{{ post_reboot_log }}"
+        line: "[COMPLETE] ?  Some verification tasks encountered issues -- {{ ansible_date_time.iso8601 }}"
+        insertafter: EOF
+
+  tags:
+    - post_reboot
+    - post_verify
+
+- name: "[POST_REBOOT] Display completion summary"
+  debug:
+    msg: |
+      ? POST-REBOOT ROLE COMPLETE
+      Log: {{ post_reboot_log }}
+      SSP Path: {{ ssp_path }}
+  tags:
+    - always

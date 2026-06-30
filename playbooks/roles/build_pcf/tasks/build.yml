@@ -1,0 +1,442 @@
+---
+# =============================================================
+# Build PCF -- Compilation and Packaging
+# =============================================================
+- name: "[DEBUG] Entered build.yml"
+  debug:
+    msg: |
+      =========================================
+      ENTERED BUILD.YML
+      ansible_check_mode={{ ansible_check_mode }}
+      =========================================
+      
+- name: "[BUILD] Pre-build preparation"
+  block:
+    - name: "Remove old build directory"
+      file:
+        path: "{{ build_pcf_build_dir }}"
+        state: absent
+
+    - name: "Create build parent directory"
+      file:
+        path: "{{ build_pcf_build_dir | dirname }}"
+        state: directory
+        mode: '0755'
+
+    - name: "Copy SVN repository to build directory"
+      shell: |
+        set -euo pipefail
+        mkdir -p "{{ build_pcf_build_dir }}"
+        cp -r "{{ build_pcf_svn_repo }}"/* "{{ build_pcf_build_dir }}/"
+        echo "? Repository copied to build directory"
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: "Verify build directory populated"
+      find:
+        paths: "{{ build_pcf_build_dir }}"
+        file_type: file
+        recurse: yes
+      register: build_files
+
+    - name: "Fail if build directory is empty"
+      fail:
+        msg: |
+          ? Build directory copy failed -- no files found in {{ build_pcf_build_dir }}
+      when: build_files.matched == 0
+
+    - name: "Log build directory contents"
+      debug:
+        msg: "? Build directory populated with {{ build_files.matched }} files"
+
+  rescue:
+    - name: "Log build preparation failure"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[BUILD][PREP_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }}"
+        insertafter: EOF
+      ignore_errors: yes
+
+    - fail:
+        msg: "Build preparation failed"
+
+  tags:
+    - build
+    - build_prep
+
+
+- name: "[BUILD] Compile PCF modules via chroot"
+  block:
+    - name: "Log build start"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[BUILD][START] {{ ansible_date_time.iso8601 }} -- Building {{ build_pcf_branch }} with kernel {{ chroot_kernel_path | basename }}"
+        insertafter: EOF
+
+    - name: "Capture build start timestamp"
+      command: date +%s
+      register: build_start_timestamp
+      changed_when: false
+
+    - name: "Validate chroot environment"
+      stat:
+        path: /sandbox/rhel810
+      register: chroot_stat
+
+    - name: "Fail if chroot not found"
+      fail:
+        msg: "? Chroot environment not found at /sandbox/rhel810"
+      when: not chroot_stat.stat.exists
+
+    - name: "Validate bambooBuildRpms script"
+      stat:
+        path: "{{ build_pcf_build_dir }}/icu/buildtools/bambooBuildRpms"
+      register: bamboo_script_stat
+
+    - name: "Fail if bambooBuildRpms not found"
+      fail:
+        msg: "? Build script not found at {{ build_pcf_build_dir }}/icu/buildtools/bambooBuildRpms"
+      when: not bamboo_script_stat.stat.exists
+
+    - name: "Verify kernel in chroot"
+      stat:
+        path: "/sandbox/rhel810{{ chroot_kernel_path }}"
+      register: chroot_kernel_verify
+
+    - name: "Fail if kernel not found in chroot"
+      fail:
+        msg: "? Kernel path not found in chroot: /sandbox/rhel810{{ chroot_kernel_path }}"
+      when: not chroot_kernel_verify.stat.exists
+
+    - name: "Run PCF build via chroot + bambooBuildRpms"
+      shell: |
+        set -euo pipefail
+
+        echo "? Starting PCF build..."
+        echo "Branch          : {{ build_pcf_branch }}"
+        echo "Build Number    : {{ build_pcf_build_no }}"
+        echo "Module Version  : {{ build_pcf_module_ver }}"
+        echo "Version         : {{ build_pcf_version }}"
+        echo "Kernel (chroot) : {{ chroot_kernel_path }}"
+        echo "Build Dir       : {{ build_pcf_build_dir }}"
+        echo "Chroot          : /sandbox/rhel810"
+        echo "Start Time      : {{ ansible_date_time.iso8601 }}"
+        echo ""
+
+        sudo chroot /sandbox/rhel810 "{{ build_pcf_build_dir }}/icu/buildtools/bambooBuildRpms" \
+          -u bambooagent \
+          -r "{{ build_pcf_build_no }}" \
+          -d "{{ build_pcf_build_dir }}" \
+          -P pcf \
+          -v "{{ build_pcf_version }}" \
+          -K "{{ chroot_kernel_path }}" \
+          -t "https://scm.forge.avaya.com/svnroot/aurora/branches/{{ build_pcf_branch }}" \
+          -m "{{ build_pcf_module_ver }}" \
+          2>&1
+
+        echo ""
+        echo "? Build completed successfully"
+      args:
+        executable: /bin/bash
+        chdir: "{{ build_pcf_build_dir }}"
+      register: build_result
+      failed_when: build_result.rc != 0
+      timeout: "{{ pcf.build_timeout_seconds | default(10800) }}"
+
+
+    - name: "Display build output"
+      debug:
+        msg: |
+          Build Output (Last 50 lines):
+          {{ build_result.stdout_lines[-50:] | default([]) | join('\n') }}
+
+    - name: "Log build output"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[BUILD][OUTPUT] {{ item }}"
+        insertafter: EOF
+      loop: "{{ build_result.stdout_lines | default([]) }}"
+      ignore_errors: yes
+
+  rescue:
+    - name: "Capture build failure details"
+      shell: |
+        echo "=== BUILD FAILURE DEBUG INFO ==="
+        echo "Build directory: {{ build_pcf_build_dir }}"
+        echo "Kernel (chroot): {{ chroot_kernel_path | default('NOT_SET') }}"
+        echo ""
+        echo "=== Chroot kernel verification ==="
+        CHROOT_KERNEL="/sandbox/rhel810{{ chroot_kernel_path | default('') }}"
+        if [ -d "$CHROOT_KERNEL" ]; then
+          echo "? Kernel found at: $CHROOT_KERNEL"
+          ls -la "$CHROOT_KERNEL" | head -10
+        else
+          echo "? Kernel NOT found at: $CHROOT_KERNEL"
+        fi
+        echo ""
+        echo "=== Last 50 lines of build directory ==="
+        ls -ltra "{{ build_pcf_build_dir }}" 2>/dev/null | tail -50 || echo "Cannot list directory"
+        echo ""
+        echo "=== Chroot status ==="
+        [ -d /sandbox/rhel810 ] && echo "? Chroot exists" || echo "? Chroot missing"
+        echo ""
+        echo "=== bambooBuildRpms status ==="
+        if [ -f "{{ build_pcf_build_dir }}/icu/buildtools/bambooBuildRpms" ]; then
+          echo "? Script found"
+          ls -la "{{ build_pcf_build_dir }}/icu/buildtools/bambooBuildRpms"
+        else
+          echo "? Script not found"
+        fi
+      register: build_debug
+      ignore_errors: yes
+
+    - name: "Log build failure details"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[BUILD][FAILED] {{ ansible_failed_result.msg | default('Unknown error') }} -- {{ ansible_date_time.iso8601 }}"
+        insertafter: EOF
+      ignore_errors: yes
+
+    - debug:
+        msg: "{{ build_debug.stdout_lines | default([]) }}"
+
+    - fail:
+        msg: |
+          ? PCF build failed for {{ build_pcf_branch }}
+          Build Dir: {{ build_pcf_build_dir }}
+          Kernel (chroot): {{ chroot_kernel_path | default('NOT_SET') }}
+          See {{ build_pcf_log }} for details
+
+  tags:
+    - build
+    - build_compile
+
+- name: "DEBUG: Show build directory contents"
+  shell: |
+    echo "===== BUILD DIRECTORY ====="
+    ls -lah "{{ build_pcf_build_dir }}"
+
+    echo ""
+    echo "===== ALL RPM FILES ====="
+    find "{{ build_pcf_build_dir }}" -type f -name "pcf-*.rpm" 2>/dev/null || true
+
+    echo ""
+    echo "===== ALL GENERATED FILES ====="
+    find "{{ build_pcf_build_dir }}" -type f | tail -100
+  args:
+    executable: /bin/bash
+  register: build_dir_debug
+  changed_when: false
+
+- name: "Display build directory debug"
+  debug:
+    var: build_dir_debug.stdout_lines
+
+- name: "[BUILD] Locate and validate generated RPM"
+  block:
+    - name: "Search for generated PCF RPM"
+      find:
+        paths:
+          - "{{ build_pcf_build_dir }}"
+          - "{{ build_pcf_releases_dir }}"
+          - "/tmp"
+          - "/root/releases"
+        patterns:
+          - "*.rpm"
+        recurse: yes
+        file_type: file
+      register: generated_rpms
+      ignore_errors: yes
+
+    - name: "Display found RPMs"
+      debug:
+        msg: |
+          Found {{ generated_rpms.matched }} RPM(s):
+          {% for rpm in generated_rpms.files %}
+          - {{ rpm.path }}
+          {% endfor %}
+
+    - name: "Verify RPM was generated"
+      fail:
+        msg: |
+          ❌ No PCF RPM generated for {{ build_pcf_branch }}
+    
+          Build directory contents:
+    
+          {{ build_dir_debug.stdout }}
+    
+          Search locations:
+          - {{ build_pcf_build_dir }}
+          - {{ build_pcf_releases_dir }}
+          - /tmp
+          - /root/releases
+    
+          Expected pattern: *.rpm
+      when: generated_rpms.matched == 0
+
+    - name: "Use most recent RPM if multiple exist"
+      set_fact:
+        build_pcf_rpm_path: "{{ generated_rpms.files | sort(attribute='mtime', reverse=true) | first }}"
+
+    - name: Display found RPM
+      debug:
+        msg: |
+          ✅ PCF RPM located:
+          Path: {{ build_pcf_rpm_path.path }}
+          Size: {{ build_pcf_rpm_path.size }} bytes
+          Modified: {{ ansible_date_time.iso8601 }}
+          Mode: {{ build_pcf_rpm_path.mode }}
+          
+    - name: "Verify RPM file is valid"
+      shell: |
+        set -euo pipefail
+        RPM_FILE="{{ build_pcf_rpm_path.path }}"
+        
+        # Check file exists and is readable
+        if [ ! -r "$RPM_FILE" ]; then
+          echo "? RPM file not readable: $RPM_FILE"
+          exit 1
+        fi
+        
+        # Verify RPM magic bytes (ED AB EE DB)
+        MAGIC=$(xxd -p -l 4 "$RPM_FILE")
+        if [ "$MAGIC" != "edabeedd" ] && [ "$MAGIC" != "edabeedb" ]; then
+          echo "? Not a valid RPM file (wrong magic bytes: $MAGIC)"
+          exit 1
+        fi
+        
+        echo "? RPM file structure is valid"
+      args:
+        executable: /bin/bash
+      register: rpm_validation
+
+    - name: "Query RPM metadata"
+      shell: |
+        set -euo pipefail
+        rpm -qp \
+          --queryformat "NAME=%{NAME}\nVERSION=%{VERSION}\nRELEASE=%{RELEASE}\nARCH=%{ARCH}\n" \
+          "{{ build_pcf_rpm_path.path }}"
+      args:
+        executable: /bin/bash
+      register: rpm_metadata
+
+    - name: "Parse RPM metadata"
+      set_fact:
+        rpm_name: "{{ (rpm_metadata.stdout_lines | select('match', '^NAME=') | first | split('='))[1] }}"
+        rpm_version: "{{ (rpm_metadata.stdout_lines | select('match', '^VERSION=') | first | split('='))[1] }}"
+        rpm_release: "{{ (rpm_metadata.stdout_lines | select('match', '^RELEASE=') | first | split('='))[1] }}"
+        rpm_arch: "{{ (rpm_metadata.stdout_lines | select('match', '^ARCH=') | first | split('='))[1] }}"
+
+    - name: "Display RPM metadata"
+      debug:
+        msg: |
+          ? RPM Metadata:
+          +- Name    : {{ rpm_name }}
+          +- Version : {{ rpm_version }}
+          +- Release : {{ rpm_release }}
+          +- Arch    : {{ rpm_arch }}
+
+    - name: "Validate RPM version matches branch"
+      assert:
+        that:
+          - rpm_version == build_pcf_version
+        fail_msg: |
+          ? RPM version mismatch
+          Expected : {{ build_pcf_version }}
+          Got      : {{ rpm_version }}
+        success_msg: "? RPM version matches branch: {{ rpm_version }}"
+
+    - name: "Generate RPM checksum"
+      shell: |
+        md5sum "{{ build_pcf_rpm_path.path }}" | awk '{print $1}'
+      register: rpm_checksum
+      changed_when: false
+
+    - name: "Create releases directory"
+      file:
+        path: "{{ build_pcf_releases_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: "Log RPM details"
+      copy:
+        content: |
+          ============================================================
+          PCF BUILD RPM MANIFEST
+          ============================================================
+          Build Branch    : {{ build_pcf_branch }}
+          Build Number    : {{ build_pcf_build_no }}
+          Module Version  : {{ build_pcf_module_ver }}
+          Kernel Version  : {{ chroot_kernel_path | basename }}
+          
+          RPM Details:
+          Path            : {{ build_pcf_rpm_path.path }}
+          Filename        : {{ build_pcf_rpm_path.path | basename }}
+          Size            : {{ build_pcf_rpm_path.size }} bytes
+          MD5 Checksum    : {{ rpm_checksum.stdout }}
+          
+          RPM Metadata:
+          Name            : {{ rpm_name }}
+          Version         : {{ rpm_version }}
+          Release         : {{ rpm_release }}
+          Architecture    : {{ rpm_arch }}
+          
+          Build Timestamp : {{ ansible_date_time.iso8601 }}
+          Build Host      : {{ inventory_hostname }}
+          ============================================================
+        dest: "{{ build_pcf_releases_dir }}/BUILD_MANIFEST_{{ build_pcf_build_no }}.txt"
+        mode: '0644'
+
+    - name: "Copy RPM to releases directory"
+      copy:
+        src: "{{ build_pcf_rpm_path.path }}"
+        dest: "{{ build_pcf_releases_dir }}/{{ build_pcf_rpm_path.path | basename }}"
+        remote_src: yes
+        mode: '0644'
+      register: rpm_copy
+
+    - name: "Log final RPM location"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: |
+          [BUILD][SUCCESS] RPM generated and copied
+          File: {{ build_pcf_releases_dir }}/{{ build_pcf_rpm_path.path | basename }}
+          Checksum: {{ rpm_checksum.stdout }}
+          Kernel: {{ chroot_kernel_path | basename }}
+          Timestamp: {{ ansible_date_time.iso8601 }}
+        insertafter: EOF
+
+    - name: "Display build success summary"
+      debug:
+        msg: |
+          ? BUILD SUCCESSFUL
+          ??????????????????????????????????????????
+          ?  PCF Module Built Successfully         ?
+          ??????????????????????????????????????????
+          Branch      : {{ build_pcf_branch }}
+          Build #     : {{ build_pcf_build_no }}
+          Module Ver  : {{ build_pcf_module_ver }}
+          Kernel      : {{ chroot_kernel_path | basename }}
+          
+          RPM Output:
+          Location    : {{ build_pcf_releases_dir }}/{{ build_pcf_rpm_path.path | basename }}
+          Size        : {{ build_pcf_rpm_path.size }} bytes
+          Checksum    : {{ rpm_checksum.stdout }}
+          
+          Log File    : {{ build_pcf_log }}
+
+  rescue:
+    - name: "Log RPM validation failure"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[BUILD][RPM_VALIDATION_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }}"
+        insertafter: EOF
+      ignore_errors: yes
+
+    - fail:
+        msg: "RPM validation failed -- see {{ build_pcf_log }} for details"
+
+  tags:
+    - build
+    - build_rpm_validate

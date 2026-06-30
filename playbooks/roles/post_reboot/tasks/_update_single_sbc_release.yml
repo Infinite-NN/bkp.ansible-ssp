@@ -1,0 +1,96 @@
+---
+# =============================================================
+# Sub-Task: Update single sbc-release file
+# Called by: update_sbc_release.yml (loop per version dir)
+# Variables from parent: rel_dir_item, today_date, next_month_name, kernel_version
+# =============================================================
+
+- name: "Find sbc-release in {{ rel_dir_item.path | basename }}"
+  find:
+    paths: "{{ rel_dir_item.path }}"
+    names: "sbc-release"
+    file_type: file
+    recurse: yes
+  register: sbc_release_files
+
+- name: "Skip if no sbc-release found"
+  debug:
+    msg: "?  No sbc-release found in {{ rel_dir_item.path | basename }}"
+  when: sbc_release_files.matched == 0
+
+- name: "Process sbc-release file"
+  block:
+    - name: "Set sbc-release path"
+      set_fact:
+        current_sbc_release: "{{ sbc_release_files.files[0].path }}"
+
+    - name: "Backup sbc-release before modification"
+      copy:
+        src: "{{ current_sbc_release }}"
+        dest: "{{ current_sbc_release }}.backup.{{ ansible_date_time.iso8601_basic_short }}"
+        remote_src: yes
+
+    - name: "Read current sbc-release content"
+      slurp:
+        src: "{{ current_sbc_release }}"
+      register: sbc_release_content
+
+    - name: "Parse current SSP_NUMBER"
+      set_fact:
+        current_ssp_number: "{{ (sbc_release_content.content | b64decode | regex_search('SSP_NUMBER=\"?([0-9]+)\"?', '\\1') | first | default('0')) }}"
+
+    - name: "Calculate new SSP_NUMBER (increment by 1)"
+      set_fact:
+        new_ssp_number: "{{ (current_ssp_number | int + 1) | string | zfill(3) }}"
+
+    - name: "Update sbc-release fields"
+      shell: |
+        set -euo pipefail
+
+        FILE="{{ current_sbc_release }}"
+        TMPFILE="${FILE}.tmp"
+
+        # Read original content
+        CONTENT=$(cat "$FILE")
+
+        # Update SSP_NUMBER
+        CONTENT=$(echo "$CONTENT" | sed 's/SSP_NUMBER="[0-9]*"/SSP_NUMBER="{{ new_ssp_number }}"/g')
+        CONTENT=$(echo "$CONTENT" | sed 's/SSP_NUMBER=[0-9]*/SSP_NUMBER={{ new_ssp_number }}/g')
+
+        # Update SSP_OS_Update_Date
+        CONTENT=$(echo "$CONTENT" | sed 's/SSP_OS_Update_Date="[^"]*"/SSP_OS_Update_Date="{{ today_date.stdout | trim }}"/g')
+        CONTENT=$(echo "$CONTENT" | sed 's/SSP_OS_Update_Date=[^ ]*/SSP_OS_Update_Date={{ today_date.stdout | trim }}/g')
+
+        # Update sbc= (new SSP directory name)
+        CONTENT=$(echo "$CONTENT" | sed 's/sbc="[^"]*"/sbc="{{ next_month_name.stdout | trim }}"/g')
+        CONTENT=$(echo "$CONTENT" | sed 's/^sbc=[^ ]*/sbc={{ next_month_name.stdout | trim }}/gm')
+
+        # Update kernel=
+        CONTENT=$(echo "$CONTENT" | sed 's/kernel="[^"]*"/kernel="{{ kernel_version.stdout | trim }}"/g')
+        CONTENT=$(echo "$CONTENT" | sed 's/^kernel=[^ ]*/kernel={{ kernel_version.stdout | trim }}/gm')
+
+        # Write updated content
+        echo "$CONTENT" > "$TMPFILE"
+        mv -f "$TMPFILE" "$FILE"
+
+        echo "Updated {{ rel_dir_item.path | basename }}/sbc-release"
+        echo "SSP_NUMBER: {{ current_ssp_number }} -> {{ new_ssp_number }}"
+      args:
+        executable: /bin/bash
+      register: update_result
+      changed_when: true
+
+    - name: "Verify updates"
+      shell: |
+        grep -E "SSP_NUMBER|SSP_OS_Update_Date|^sbc=|^kernel=" "{{ current_sbc_release }}" || echo "Could not verify"
+      args:
+        executable: /bin/bash
+      register: verify_result
+      changed_when: false
+
+    - debug:
+        msg: |
+          ? sbc-release updated:
+          {{ verify_result.stdout_lines }}
+
+  when: sbc_release_files.matched > 0

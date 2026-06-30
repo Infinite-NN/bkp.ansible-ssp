@@ -1,0 +1,318 @@
+---
+# =============================================================
+# SSP Install Role -- Default Variables
+# All values are hardcoded -- NO Jinja2 references
+# Override with group_vars/host_vars or -e at CLI
+# =============================================================
+
+# ---------------------------------------------------------
+# Artifact Server Configuration
+# ---------------------------------------------------------
+
+artifact_server:
+  base_url: "http://10.133.43.170"
+  ssp_path: "releases/SSP"
+  timeout: 60
+  
+# Fallback artifact servers (in case primary is unavailable)
+artifact_servers_fallback:
+  - "http://10.133.43.171"
+  - "http://backup-artifacts.avaya.local"
+
+# ---------------------------------------------------------
+# SSP Installation Paths
+# ---------------------------------------------------------
+
+# Working directory for downloads and extraction
+ssp_work_dir: "/opt/ssp_work"
+
+# Final installation directory
+ssp_install_dir: "/opt/ssp"
+
+# Backup location for existing SSP before installation
+ssp_backup_dir: "/archive/backup/upgrade"
+
+# ---------------------------------------------------------
+# Patch/Installation Log Paths
+# ---------------------------------------------------------
+
+# patchSBC output log
+patch_log: "/archive/log/icu/patch.log"
+
+# Ansible role log directory
+log_dir: "/var/log/avaya_pipeline"
+
+# ---------------------------------------------------------
+# IPCS Service Control
+# ---------------------------------------------------------
+
+# Path to IPCS control/init script
+ipcs_script: "/usr/local/ipcs/icu3/scripts/ipcs-init.py"
+
+# IPCS service name (for systemctl)
+ipcs_service_name: "IPCS"
+
+# IPCS startup timeout (seconds)
+ipcs_startup_timeout: 600
+
+# ---------------------------------------------------------
+# patchSBC Configuration
+# ---------------------------------------------------------
+
+# Python virtual environment path for patchSBC
+patchsbc_venv_python: "/usr/local/ipcs/peon/venv/bin/python"
+
+# Silent mode flag (suppress interactive prompts)
+patchsbc_silent_flag: "--silent"
+
+# Async timeout for patchSBC execution (seconds = 90 minutes)
+patchsbc_async_timeout: 5400
+
+# Poll interval for patchSBC progress (seconds)
+patchsbc_poll_interval: 30
+
+# Max retries for patchSBC if it fails
+patchsbc_max_retries: 1
+
+# ---------------------------------------------------------
+# patchSBC Success/Failure Markers
+# ---------------------------------------------------------
+
+patchsbc_success_markers:
+  - "FINISHED INSTALLING SSP"
+  - "System must be rebooted now"
+  - "Installation successful"
+
+patchsbc_failure_markers:
+  - "ERROR ::"
+  - "FATAL ::"
+  - "Installation failed"
+  - "ERROR: Installation aborted"
+
+# ---------------------------------------------------------
+# Download Configuration
+# ---------------------------------------------------------
+
+# Maximum retries for HTTP downloads
+download_max_retries: 10
+
+# Delay between download retries (seconds)
+download_retry_delay: 30
+
+# Download timeout per attempt (seconds)
+download_timeout: 600
+
+# Connection timeout (seconds)
+download_connect_timeout: 30
+
+# Minimum TAR file size (1 MB)
+ssp_tar_min_size_bytes: 1048576
+
+# Verify artifact server certificate (HTTPS)
+download_verify_ssl: false
+
+# ---------------------------------------------------------
+# TAR/Archive Detection
+# ---------------------------------------------------------
+
+# Regex pattern for SSP version in filename/path
+ssp_version_pattern: '10\.2\.1[^\"/\s]+'
+
+# Regex for TAR file detection
+ssp_tar_pattern: '[^\"/\s]+\.tar\b'
+
+# Expected TAR file suffix
+ssp_tar_suffix: '.tar'
+
+# TGZ suffix within extracted TAR
+ssp_tgz_suffix: '.tgz'
+
+# ---------------------------------------------------------
+# Timeout Configuration (seconds)
+# ---------------------------------------------------------
+
+# Download timeout
+timeout_download: 600
+
+# Extraction timeout
+timeout_extract: 300
+
+# patchSBC execution timeout
+timeout_patchsbc: 5400
+
+# Reboot timeout (how long to wait for system to come back)
+timeout_reboot: 600
+
+# Post-reboot reconnection timeout
+timeout_reboot_connect: 30
+
+# Post-reboot delay (let system settle)
+timeout_post_reboot_delay: 180
+
+# GUI startup timeout (how long to wait for GUI to be UP)
+timeout_gui_startup: 1800
+
+# ---------------------------------------------------------
+# Retry Configuration
+# ---------------------------------------------------------
+
+# Retry count for download operations
+retry_count_download: 10
+
+# Retry count for extraction operations
+retry_count_extract: 3
+
+# Retry count for patchSBC polling
+retry_count_patchsbc_poll: 120
+
+# Retry count for GUI startup checks
+retry_count_gui_check: 60
+
+# Base delay for retries (seconds)
+retry_delay_base: 30
+
+# Delay for GUI checks (seconds) - shorter for responsive feedback
+retry_delay_gui: 10
+
+# ---------------------------------------------------------
+# Disk Space Requirements (GB)
+# ---------------------------------------------------------
+# CRITICAL: Tuned for Avaya SBCE SBC with 5.9GB /opt partition
+# After cleanup of old backups, ~3GB should be available
+# Absolute minimums to prevent installation failure
+
+# Minimum free space on /opt for installation
+disk_min_opt_free_gb: 1
+
+# Minimum free space on / (root) filesystem
+disk_min_root_free_gb: 2
+
+# ---------------------------------------------------------
+# Lock File Management
+# ---------------------------------------------------------
+
+# Paths where lock files may exist
+lock_file_paths:
+  - "/usr/local/ipcs/temp"
+  - "/tmp"
+  - "/var/lock"
+
+# ---------------------------------------------------------
+# Reboot Configuration
+# ---------------------------------------------------------
+
+# Message to display during reboot
+reboot_message: "Avaya SSP Pipeline initiated system reboot for SSP installation"
+
+# Command to test connectivity after reboot
+reboot_test_command: "/bin/hostname"
+
+# Search for command in expected paths
+reboot_test_command_paths:
+  - "/bin/hostname"
+  - "/usr/bin/hostname"
+
+# ---------------------------------------------------------
+# GUI Service Verification
+# ---------------------------------------------------------
+
+# Pattern to match in IPCS status output
+gui_check_pattern: "GUI.*UP|Web.*UP|UI.*UP"
+
+# Max retries to wait for GUI
+gui_max_retries: 60
+
+# Delay between GUI checks (seconds)
+gui_check_delay: 10
+
+# ---------------------------------------------------------
+# Artifact Collection
+# ---------------------------------------------------------
+
+# Destination path for collected artifacts
+artifact_dest_base: "/tmp/avaya_artifacts"
+
+# Artifacts to collect
+artifacts_to_collect:
+  - "{{ patch_log }}"
+  - "{{ log_dir }}/ssp_install_*.log"
+
+# ---------------------------------------------------------
+# Feature Flags
+# ---------------------------------------------------------
+
+# Enable pre-installation checks
+enable_pre_checks: true
+
+# Enable cleanup of work directory after completion
+enable_cleanup_work_dir: true
+
+# Enable cleanup on failure (vs. keep for diagnosis)
+cleanup_on_failure: false
+
+# Enable backup of existing SSP before installation
+enable_backup_existing_ssp: true
+
+# Verify checksums of downloaded artifacts
+verify_download_checksums: false
+
+# Enable TGZ archive integrity check
+verify_tgz_integrity: true
+
+# ---------------------------------------------------------
+# Logging and Debug
+# ---------------------------------------------------------
+
+# Enable verbose logging
+verbose_logging: false
+
+# Enable debug output
+debug_mode: false
+
+# Log retention days
+log_retention_days: 90
+
+# Max log file size (MB) before rotation
+log_max_size_mb: 100
+
+# ---------------------------------------------------------
+# Backup Settings
+# ---------------------------------------------------------
+
+# Pattern for backup file names
+backup_file_pattern: "sbce-backup-ssp-*.tar.gz"
+
+# How many backup generations to keep
+backup_retention_count: 3
+
+# ---------------------------------------------------------
+# System Requirements Validation
+# ---------------------------------------------------------
+
+# Required disk space for SSP installation
+required_disk_ssp_gb: 3
+
+# Required free memory (MB)
+required_memory_mb: 512
+
+# Required minimum kernel version
+required_kernel_version: "4.18"
+
+# ---------------------------------------------------------
+# Phase Toggles (for conditional execution)
+# ---------------------------------------------------------
+
+# Run pre-installation checks
+phase_pre_checks: true
+
+# Run download phase
+phase_download: true
+
+# Run extraction phase
+phase_extract: true
+
+# Run installation phase (patchSBC)
+phase_install: true
+
+# Run post-reboot validation
+phase_post_reboot: true

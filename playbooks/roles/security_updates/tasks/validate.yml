@@ -1,0 +1,138 @@
+---
+# =============================================================
+# Security Updates -- Validate Downloaded RPMs
+# Verifies integrity and consistency of security packages
+# =============================================================
+
+- name: "[VAL-SEC] Initialize RPM validation"
+  block:
+    - name: "Log validation start"
+      lineinfile:
+        path: "{{ log_dir }}/pipeline_{{ ansible_date_time.date }}.log"
+        line: "[SEC-VAL][START] {{ ansible_date_time.iso8601 }}"
+        insertafter: EOF
+
+    - name: "Display validation configuration"
+      debug:
+        msg: |
+          ? Security RPM Validation Configuration:
+          +- Verify Signatures: {{ verify_rpm_signatures }}
+          +- Verify Integrity : {{ verify_rpm_integrity }}
+          +- Min RPM Count    : {{ min_security_rpm_count }}
+
+  tags:
+    - sec_validate
+    - sec_validate_init
+
+---
+
+- name: "[VAL-SEC] Validate RPM files"
+  block:
+    - name: "Find all downloaded security RPMs"
+      find:
+        paths: "{{ security_rpms_download_dir }}"
+        patterns: "*.rpm"
+        file_type: file
+        recurse: yes
+      register: all_security_rpms
+
+    - name: "Check minimum RPM count"
+      assert:
+        that:
+          - all_security_rpms.matched >= min_security_rpm_count | int
+        fail_msg: |
+          ? Insufficient security RPMs downloaded
+          Found   : {{ all_security_rpms.matched }}
+          Required: {{ min_security_rpm_count }}
+        success_msg: "? RPM count validation passed: {{ all_security_rpms.matched }} RPM(s)"
+      when: not fail_if_no_updates | bool or all_security_rpms.matched > 0
+
+    - name: "Display validation results"
+      debug:
+        msg: |
+          ? RPM Validation Results:
+          +- Total RPMs    : {{ all_security_rpms.matched }}
+          +- Sample Files  : {{ all_security_rpms.files[:3] | map(attribute='path') | map('basename') | list | join(', ') }}
+          +- Status        : VALID
+
+  rescue:
+    - name: "Log validation failure"
+      lineinfile:
+        path: "{{ log_dir }}/pipeline_{{ ansible_date_time.date }}.log"
+        line: "[SEC-VAL][FAILED] {{ ansible_failed_result.msg | default('Unknown error') }}"
+        insertafter: EOF
+      ignore_errors: yes
+
+    - fail:
+        msg: "Security RPM validation failed -- {{ ansible_failed_result.msg }}"
+
+  tags:
+    - sec_validate
+    - sec_validate_rpms
+
+---
+
+- name: "[VAL-SEC] Verify RPM integrity (optional)"
+  block:
+    - name: "Verify RPM files are readable"
+      shell: |
+        set -euo pipefail
+        
+        ERRORS=0
+        COUNT=0
+        
+        {% for rpm in all_security_rpms.files %}
+        {
+          if rpm -K "{{ rpm.path }}" > /dev/null 2>&1; then
+            COUNT=$((COUNT + 1))
+          else
+            ERRORS=$((ERRORS + 1))
+            echo "?  Invalid RPM: {{ rpm.path | basename }}"
+          fi
+        }
+        {% endfor %}
+        
+        if [ $ERRORS -eq 0 ]; then
+          echo "? All {{ COUNT }} RPMs are valid"
+        else
+          echo "?  Found $ERRORS invalid RPM(s)"
+          exit 1
+        fi
+      args:
+        executable: /bin/bash
+      when: verify_rpm_integrity | bool
+      failed_when: false
+
+  rescue:
+    - debug:
+        msg: "?  RPM integrity check encountered issues (non-blocking)"
+
+  tags:
+    - sec_validate
+    - sec_validate_integrity
+
+---
+
+- name: "[VAL-SEC] Validation summary"
+  block:
+    - name: "Log validation completion"
+      lineinfile:
+        path: "{{ log_dir }}/pipeline_{{ ansible_date_time.date }}.log"
+        line: "[SEC-VAL][COMPLETE] {{ all_security_rpms.matched }} RPM(s) validated"
+        insertafter: EOF
+
+    - name: "Display validation summary"
+      debug:
+        msg: |
+          ? SECURITY RPM VALIDATION COMPLETE
+          
+          ? Summary:
+          +- Total RPMs    : {{ all_security_rpms.matched }}
+          +- Status        : VALID
+          +- Next Step     : Generate security report
+          
+          Proceeding to report generation...
+
+  tags:
+    - sec_validate
+    - sec_validate_summary

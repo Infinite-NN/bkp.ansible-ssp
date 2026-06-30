@@ -1,0 +1,314 @@
+---
+# =============================================================
+# Build PCF -- Kernel Source Preparation
+# Downloads and installs kernel-devel for build environment
+# =============================================================
+
+- name: "[KERNEL] Preparation block"
+  block:
+    - name: "Ensure kernel work directory exists"
+      file:
+        path: "{{ pcf.build_temp_root }}/kernel"
+        state: directory
+        mode: '0755'
+
+    - name: "Set kernel work directory fact"
+      set_fact:
+        kernel_work_dir: "{{ pcf.build_temp_root }}/kernel"
+
+    - name: "Clean old kernel RPMs"
+      find:
+        paths: "{{ kernel_work_dir }}"
+        patterns: "kernel-devel-*.rpm"
+        file_type: file
+      register: old_kernels
+
+    - name: "Remove old kernel RPMs"
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ old_kernels.files }}"
+      when: old_kernels.matched > 0
+
+  rescue:
+    - fail:
+        msg: "Kernel directory preparation failed"
+
+  tags:
+    - kernel
+    - kernel_prep
+
+- name: "[KERNEL] Download latest kernel-devel"
+  block:
+    - name: "Download kernel-devel RPM"
+      shell: |
+        set -euo pipefail
+    
+        cd "{{ kernel_work_dir }}"
+    
+        # Download kernel RPM
+        if ! dnf download kernel-devel --destdir="{{ kernel_work_dir }}" -q 2>/dev/null; then
+          echo "? dnf download failed" >&2
+          exit 1
+        fi
+    
+        # Find the downloaded RPM
+        RPM=$(ls -1 "{{ kernel_work_dir }}"/kernel-devel-*.rpm 2>/dev/null | sort -V | tail -1)
+    
+        if [ -z "$RPM" ]; then
+          echo "? No kernel-devel RPM found after download" >&2
+          exit 1
+        fi
+    
+        # Output ONLY filename to stdout (no debug messages)
+        basename "$RPM"
+      args:
+        executable: /bin/bash
+      register: kernel_rpm_download
+      timeout: 300
+      retries: "{{ pcf.build_retries }}"
+      delay: 30
+      until: kernel_rpm_download.rc == 0
+
+    - name: "Extract kernel RPM filename"
+      set_fact:
+        kernel_rpm_file: "{{ kernel_rpm_download.stdout | trim }}"
+
+    - name: "Verify kernel RPM file exists"
+      stat:
+        path: "{{ kernel_work_dir }}/{{ kernel_rpm_file }}"
+      register: kernel_rpm_stat
+
+    - name: "Fail if kernel RPM not found"
+      fail:
+        msg: |
+          ? Kernel RPM file not found after download
+          Expected: {{ kernel_work_dir }}/{{ kernel_rpm_file }}
+      when: not kernel_rpm_stat.stat.exists
+
+    - name: "Display kernel RPM details"
+      debug:
+        msg: |
+          ? Kernel RPM downloaded:
+          File: {{ kernel_rpm_file }}
+          Size: {{ kernel_rpm_stat.stat.size }} bytes
+          Path: {{ kernel_work_dir }}/{{ kernel_rpm_file }}
+
+  rescue:
+    - name: "Log kernel download failure"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[KERNEL][DOWNLOAD_FAILED] {{ ansible_failed_result.msg | default('Unknown error') }}"
+        insertafter: EOF
+      ignore_errors: yes
+
+    - fail:
+        msg: "Kernel RPM download failed -- cannot proceed with build"
+
+  tags:
+    - kernel
+    - kernel_download
+
+- name: "[KERNEL] Validate RPM and extract metadata"
+  block:
+    - name: "Validate RPM file format"
+      shell: |
+        set -euo pipefail
+        
+        RPM_FILE="{{ kernel_work_dir }}/{{ kernel_rpm_file }}"
+        
+        # Check magic bytes (ED AB EE DB)
+        MAGIC=$(xxd -p -l 4 "$RPM_FILE" 2>/dev/null || echo "")
+        
+        if [ -z "$MAGIC" ] || ([ "$MAGIC" != "edabeedd" ] && [ "$MAGIC" != "edabeedb" ]); then
+          echo "? Invalid RPM file (magic bytes)"
+          exit 1
+        fi
+        
+        echo "? RPM file format valid"
+      args:
+        executable: /bin/bash
+      register: rpm_format_check
+
+    - name: "Query kernel RPM metadata"
+      shell: |
+        rpm -qp --queryformat "NAME=%{NAME}\nVERSION=%{VERSION}\nRELEASE=%{RELEASE}\n" \
+          "{{ kernel_work_dir }}/{{ kernel_rpm_file }}"
+      register: kernel_rpm_metadata
+      changed_when: false
+
+    - name: "Extract kernel metadata"
+      set_fact:
+        kernel_name: "{{ (kernel_rpm_metadata.stdout_lines | select('match', '^NAME=') | first | split('='))[1] }}"
+        kernel_version: "{{ (kernel_rpm_metadata.stdout_lines | select('match', '^VERSION=') | first | split('='))[1] }}"
+        kernel_release: "{{ (kernel_rpm_metadata.stdout_lines | select('match', '^RELEASE=') | first | split('='))[1] }}"
+
+    - name: "Display kernel version"
+      debug:
+        msg: |
+          ? Kernel Package:
+          +- Name    : {{ kernel_name }}
+          +- Version : {{ kernel_version }}
+          +- Release : {{ kernel_release }}
+
+  rescue:
+    - fail:
+        msg: "Kernel RPM validation failed"
+
+  tags:
+    - kernel
+    - kernel_validate
+
+- name: "[KERNEL] Copy kernel RPM into chroot sandbox"
+  block:
+    - name: "Ensure chroot kernel directory exists"
+      file:
+        path: /sandbox/rhel810/tmp/kernel-rpms
+        state: directory
+        mode: '0755'
+
+    - name: "Copy kernel RPM to chroot"
+      shell: |
+        cp "{{ kernel_work_dir }}/{{ kernel_rpm_file }}" /sandbox/rhel810/tmp/kernel-rpms/
+        echo "? Kernel RPM copied to chroot: /tmp/kernel-rpms/{{ kernel_rpm_file }}"
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+  rescue:
+    - name: "Log kernel copy failure"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[KERNEL][COPY_FAILED] Failed to copy kernel RPM to chroot"
+        insertafter: EOF
+      ignore_errors: yes
+
+    - fail:
+        msg: "Failed to copy kernel RPM to chroot sandbox"
+
+  tags:
+    - kernel
+    - kernel_chroot
+
+- name: "[KERNEL] Install kernel-devel RPM inside chroot"
+  block:
+    - name: "Install kernel-devel in chroot"
+      shell: |
+        set -euo pipefail
+        
+        CHROOT="/sandbox/rhel810"
+        RPM_FILE="/tmp/kernel-rpms/{{ kernel_rpm_file }}"
+        
+        echo "? Installing kernel-devel inside chroot..."
+        echo "RPM: $RPM_FILE"
+        
+        # Try dnf first (preferred)
+        if sudo chroot "$CHROOT" dnf install -y "$RPM_FILE" 2>&1; then
+          echo "? Kernel-devel installed via dnf"
+        else
+          echo "?  dnf failed, trying rpm install..."
+          if sudo chroot "$CHROOT" rpm -ivh "$RPM_FILE" 2>&1; then
+            echo "? Kernel-devel installed via rpm"
+          else
+            echo "?  Kernel install had issues (may already exist)"
+          fi
+        fi
+      args:
+        executable: /bin/bash
+      register: chroot_install_result
+      changed_when: true
+      ignore_errors: yes
+
+    - name: "Verify kernel in chroot"
+      shell: |
+        sudo chroot /sandbox/rhel810 rpm -q kernel-devel 2>/dev/null || echo "?  Kernel package status unknown"
+      args:
+        executable: /bin/bash
+      register: chroot_kernel_check
+      changed_when: false
+
+    - name: "Log kernel in chroot"
+      debug:
+        msg: |
+          ? Kernel status in chroot:
+          {{ chroot_kernel_check.stdout }}
+
+  rescue:
+    - name: "Log kernel installation in chroot"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[KERNEL][CHROOT_INSTALL] Installation attempted (may have succeeded)"
+        insertafter: EOF
+      ignore_errors: yes
+
+  tags:
+    - kernel
+    - kernel_chroot
+
+- name: "[KERNEL] Find kernel source inside chroot"
+  block:
+    - name: "Locate kernel source in chroot"
+      shell: |
+        set -euo pipefail
+        
+        CHROOT="/sandbox/rhel810"
+        
+        # Find kernel source in chroot
+        KERNEL_PATH=$(sudo chroot "$CHROOT" find /usr/src/kernels -maxdepth 1 -type d -name "4.18.0-*" 2>/dev/null | sort -V | tail -1)
+        
+        if [ -z "$KERNEL_PATH" ]; then
+          echo "? No kernel source found in chroot"
+          exit 1
+        fi
+        
+        echo "$KERNEL_PATH"
+      args:
+        executable: /bin/bash
+      register: chroot_kernel_path_result
+      changed_when: false
+
+    - name: "Set chroot kernel path variable"
+      set_fact:
+        chroot_kernel_path: "{{ chroot_kernel_path_result.stdout }}"
+
+    - name: "Verify kernel path exists in chroot"
+      shell: |
+        sudo chroot /sandbox/rhel810 test -d "{{ chroot_kernel_path }}" && echo "? Kernel verified" || exit 1
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: "Display chroot kernel path"
+      debug:
+        msg: |
+          ? Kernel source inside chroot:
+          {{ chroot_kernel_path }}
+
+    - name: "Log chroot kernel path"
+      lineinfile:
+        path: "{{ build_pcf_log }}"
+        line: "[KERNEL][CHROOT_PATH] {{ chroot_kernel_path }} -- {{ ansible_date_time.iso8601 }}"
+        insertafter: EOF
+
+  rescue:
+    - name: "Fail if kernel not found in chroot"
+      fail:
+        msg: "? Kernel source not found in chroot at /usr/src/kernels -- build will fail"
+
+  tags:
+    - kernel
+    - kernel_chroot
+
+- name: "[KERNEL] Summary"
+  debug:
+    msg: |
+      ? KERNEL PREPARATION COMPLETE
+      
+      ? Kernel Package:
+      +- RPM          : {{ kernel_rpm_file }}
+      +- Version      : {{ kernel_version }}-{{ kernel_release }}
+      +- Host Path    : /usr/src/kernels/{{ kernel_version }}-{{ kernel_release }}
+      +- Chroot Path  : {{ chroot_kernel_path }}
+  tags:
+    - kernel
+    - kernel_summary

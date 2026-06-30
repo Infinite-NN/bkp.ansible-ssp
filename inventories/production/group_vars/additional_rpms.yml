@@ -1,0 +1,169 @@
+---
+# =============================================================
+# Additional RPM Download Configuration -- Production
+# Purpose: Explicitly download RPMs not in automatic security
+#          update scans. Use when specific packages are required.
+#
+# Applies to: sbc group via post_reboot role
+# =============================================================
+
+# ---------------------------------------------------------
+# IMPORTANT NOTES
+# ---------------------------------------------------------
+#
+# 1. Package Names Only: Use DNF package names (e.g., "openssh"),
+#    NOT filenames (e.g., "openssh-8.0.1-abc.rpm").
+#
+# 2. Repository Selection:
+#    - baseos    : Packages downloaded to /repos/BaseOS
+#    - appstream : Packages downloaded to /repos/AppStream
+#    - extra     : Packages downloaded to /repos/AdditionalRPMs
+#
+# 3. Missing Package Handling:
+#    - Warnings are non-fatal; pipeline continues
+#    - Invalid package names are logged but don't fail
+#
+# 4. Verification:
+#    - All packages are verified after download
+#    - Checksums are generated for tracking
+#
+# 5. Best Practices:
+#    - Keep lists small & focused
+#    - Comment why each package is needed
+#    - Use exact package names (e.g., "java-17-openjdk")
+#    - Test in staging FIRST before production
+#
+# ---------------------------------------------------------
+
+additional_rpms:
+
+  # -------------------------------------------------------
+  # BaseOS Repository Packages
+  # -------------------------------------------------------
+  # Critical system utilities and libraries
+  # Downloaded to: /repos/BaseOS/Packages
+  #
+  baseos:
+    # SSH Server -- ALWAYS keep updated for security
+    #- openssh
+    #- openssh-server
+    #- openssh-clients
+    
+    # Kernel Tools -- Required for performance diagnostics
+    #- kernel-tools
+    #- kernel-tools-libs
+    
+    # System Utilities
+    #- sudo
+    #- curl
+    #- wget
+    #- rsync
+    
+    # Debugging Tools
+    #- strace
+    #- tcpdump
+    
+    # Additional tools as needed
+    # - sysstat     # System performance monitoring
+    # - iotop       # I/O monitoring
+    # - perf        # Performance profiling
+
+  # -------------------------------------------------------
+  # AppStream Repository Packages
+  # -------------------------------------------------------
+  # Development tools, runtimes, and applications
+  # Downloaded to: /repos/AppStream/Packages
+  #
+  appstream:
+    # Java Runtime -- Required for SSP GUI & services
+    #- java-17-openjdk
+    #- java-17-openjdk-headless
+    
+    # Additional Java versions (if needed for legacy apps)
+    # - java-1.8.0-openjdk
+    # - java-1.8.0-openjdk-headless
+    
+    # Python (if required for custom scripts)
+    # - python39
+    # - python39-devel
+    
+    # Other application runtimes
+    # - nodejs      # Node.js runtime (if applicable)
+    # - gcc         # C compiler (if needed for builds)
+
+  # -------------------------------------------------------
+  # Extra/Additional Repository Packages
+  # -------------------------------------------------------
+  # Custom or third-party packages from any enabled repo
+  # Downloaded to: /repos/AdditionalRPMs/
+  #
+  extra:
+    # Example: Custom monitoring agent
+    # - monitoring-agent-avaya
+    
+    # Example: Custom security tool
+    # - avaya-security-check
+    
+    # Add custom packages below as needed
+    []
+
+# ---------------------------------------------------------
+# Advanced Configuration Options
+# ---------------------------------------------------------
+
+# Continue if a package cannot be found
+skip_missing_packages: true
+
+# Log packages that failed to download
+log_failed_packages: true
+
+# Generate manifest of downloaded packages
+generate_package_manifest: true
+
+# Verify package availability before downloading
+verify_availability: true
+
+# Archive downloaded packages
+archive_downloaded_packages: true
+
+# Archive location
+archive_location: "/repos/archive/additional_rpms"
+
+# ---------------------------------------------------------
+# Troubleshooting & Debugging
+# ---------------------------------------------------------
+
+# Enable verbose package download output
+verbose_download: false
+
+# Show which repository each package comes from
+show_repo_source: true
+
+# Enable detailed logging
+enable_detailed_logging: true
+
+# ---------------------------------------------------------
+# Security & Validation
+# ---------------------------------------------------------
+
+# Validate package signatures
+validate_signatures: false
+
+# Verify package checksums
+verify_checksums: true
+
+# Scan for vulnerable packages
+scan_vulnerabilities: false
+
+# ---------------------------------------------------------
+# Performance Configuration
+# ---------------------------------------------------------
+
+# Enable parallel downloads for multiple packages
+parallel_downloads: true
+
+# Maximum concurrent downloads
+max_concurrent_downloads: 4
+
+# Download timeout per package (seconds)
+package_download_timeout: 300
